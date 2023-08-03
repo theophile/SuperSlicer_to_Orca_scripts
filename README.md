@@ -41,6 +41,7 @@ Like many SuperSlicer users, I've been considering a switch to OrcaSlicer but ha
   - Getopt::Long
   - File::Basename
   - File::Glob ':glob'
+  - File::Spec
   - String::Escape
   - Config::Tiny
   - JSON
@@ -58,7 +59,7 @@ On Windows I use [Strawberry Perl](https://strawberryperl.com/).
 2. Install the required Perl modules using CPAN or your system's package manager. For example, if you're using CPAN:
 
 ```
-cpan Getopt::Long File::Basename File::Glob String::Escape Config::Tiny JSON
+cpan Getopt::Long File::Basename File::Glob File::Spec String::Escape Config::Tiny JSON
 ```
 
 3. Clone this repository or download the script directly from GitHub.
