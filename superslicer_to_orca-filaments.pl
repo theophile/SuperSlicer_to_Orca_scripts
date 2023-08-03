@@ -5,6 +5,7 @@ use warnings;
 use Getopt::Long;
 use File::Basename;
 use File::Glob ':glob';
+use File::Spec;
 use String::Escape qw(unbackslash);
 use Config::Tiny;
 use JSON;
@@ -44,6 +45,15 @@ GetOptions(
 # Check if required options are provided
 if ( !@input_files || !$output_directory ) {
     print_usage_and_exit();
+}
+
+# Check if the output directory exists...
+unless ( -d $output_directory ) {
+    die("Output directory $output_directory cannot be found.\n");
+}
+# ...and is writable
+unless ( -w $output_directory ) {
+    die("Output directory $output_directory is not writable.\n");
 }
 
 # Define parameter mappings for translating the SuperSlicer INI settings
