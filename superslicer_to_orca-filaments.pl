@@ -10,6 +10,9 @@ use String::Escape qw(unbackslash);
 use Config::Tiny;
 use JSON;
 
+# Constants
+my $ORCA_SLICER_VERSION = '1.6.0.0';
+
 # Subroutine to print usage instructions and exit
 sub print_usage_and_exit {
     my $usage = <<"END_USAGE";
@@ -51,6 +54,7 @@ if ( !@input_files || !$output_directory ) {
 unless ( -d $output_directory ) {
     die("Output directory $output_directory cannot be found.\n");
 }
+
 # ...and is writable
 unless ( -w $output_directory ) {
     die("Output directory $output_directory is not writable.\n");
@@ -58,7 +62,7 @@ unless ( -w $output_directory ) {
 
 # Define parameter mappings for translating the SuperSlicer INI settings
 # to Orca Slicer JSON keys
-my %parameter_map = (
+my %filament_parameter_map = (
     bed_temperature => [
         'hot_plate_temp', 'cool_plate_temp',
         'eng_plate_temp', 'textured_plate_temp'
@@ -144,6 +148,62 @@ my %default_MVS = (
     SCAFF => '8'
 );
 
+# Initialize a hash to store translated JSON data
+my %new_hash = ();
+
+sub convert_filament_params {
+    my ( $parameter, $superslicer_ini ) = @_;
+    # Ignore SuperSlicer parameters that Orca Slicer doesn't support
+    return unless exists $filament_parameter_map{$parameter};
+
+    # Get the value of the current parameter from the INI file
+    my $new_value = $superslicer_ini->{_}->{$parameter};
+
+    # If the SuperSlicer value is 'nil,' skip this parameter and let
+    # Orca Slicer use its own default
+    return if ( $new_value eq 'nil' );
+
+    # Check if the parameter maps to multiple keys in the JSON data
+    if ( ref( $filament_parameter_map{$parameter} ) eq 'ARRAY' ) {
+
+        # If yes, set the same value for each key in the JSON data
+        $new_hash{$_} = $new_value for @{ $filament_parameter_map{$parameter} };
+        return;
+    }
+
+    # Handle special cases for specific parameter keys
+    if ( $parameter =~ /^(start_filament_gcode|end_filament_gcode)/ ) {
+
+        # The custom gcode blocks need to be unquoted and unbackslashed
+        # before JSON encoding
+        $new_value =~ s/^"(.*)"$/$1/;
+        $new_value = [ unbackslash($new_value) ];
+    }
+    elsif ( $parameter eq 'filament_type' ) {
+
+        # Translate filament type to a specific value if it exists in
+        # the mapping, otherwise keep the original value
+        $new_value = $filament_types{$new_value} // $new_value;
+    }
+    elsif ( $parameter eq 'filament_max_volumetric_speed' ) {
+
+        # Max volumetric speed can't be zero so use a reasonable default
+        # if necessary
+        my $mvs =
+          ( $new_value > 0 )
+          ? $new_value
+          : $default_MVS{ $superslicer_ini->{_}->{'filament_type'} };
+        $new_value = "" . $mvs;    # Must cast as a string before JSON encoding
+    }
+    elsif ( $parameter eq 'external_perimeter_fan_speed' ) {
+
+        # 'external_perimeter_fan_speed' in SS is the closest equivalent to
+        # 'overhang_fan_threshold' in Orca, so convert to percentage
+        $new_value = ( $new_value < 0 ) ? '0%' : "$new_value%";
+    }
+    return $new_value;
+}
+
 # Expand wildcards and process each input file
 my @expanded_input_files;
 foreach my $pattern (@input_files) {
@@ -155,8 +215,8 @@ foreach my $input_file (@expanded_input_files) {
     # Extract filename, directory, and extension from the input file
     my ( $file, $dir, $ext ) = fileparse( $input_file, qr/\.[^.]*/ );
 
-    # Initialize a hash to store translated JSON data
-    my %new_hash = ();
+    # Clear the JSON hash
+    %new_hash = ();
 
     # Read the input INI file
     my $superslicer_ini = Config::Tiny->read( $input_file, 'utf8' )
@@ -166,57 +226,12 @@ foreach my $input_file (@expanded_input_files) {
     # Loop through each parameter in the INI file
     foreach my $parameter ( keys %{ $superslicer_ini->{_} } ) {
 
-        # Ignore SuperSlicer parameters that Orca Slicer doesn't support
-        next unless exists $parameter_map{$parameter};
+        my $new_value = convert_filament_params( $parameter, $superslicer_ini );
 
-        # Get the value of the current parameter from the INI file
-        my $new_value = $superslicer_ini->{_}->{$parameter};
-
-        # If the SuperSlicer value is 'nil,' skip this parameter and let
-        # Orca Slicer use its own default
-        next if ( $new_value eq 'nil' );
-
-        # Check if the parameter maps to multiple keys in the JSON data
-        if ( ref( $parameter_map{$parameter} ) eq 'ARRAY' ) {
-
-            # If yes, set the same value for each key in the JSON data
-            $new_hash{$_} = $new_value for @{ $parameter_map{$parameter} };
-            next;
-        }
-
-        # Handle special cases for specific parameter keys
-        if ( $parameter =~ /^(start_filament_gcode|end_filament_gcode)/ ) {
-
-            # The custom gcode blocks need to be unquoted and unbackslashed
-            # before JSON encoding
-            $new_value =~ s/^"(.*)"$/$1/;
-            $new_value = [ unbackslash($new_value) ];
-        }
-        elsif ( $parameter eq 'filament_type' ) {
-
-            # Translate filament type to a specific value if it exists in
-            # the mapping, otherwise keep the original value
-            $new_value = $filament_types{$new_value} // $new_value;
-        }
-        elsif ( $parameter eq 'filament_max_volumetric_speed' ) {
-
-            # Max volumetric speed can't be zero so use a reasonable default
-            # if necessary
-            my $mvs =
-              ( $new_value > 0 )
-              ? $new_value
-              : $default_MVS{ $superslicer_ini->{_}->{'filament_type'} };
-            $new_value = "" . $mvs; # Must cast as a string before JSON encoding
-        }
-        elsif ( $parameter eq 'external_perimeter_fan_speed' ) {
-
-            # 'external_perimeter_fan_speed' in SS is the closest equivalent to
-            # 'overhang_fan_threshold' in Orca, so convert to percentage
-            $new_value = ( $new_value < 0 ) ? '0%' : "$new_value%";
-        }
+        next if (!defined $new_value);
 
         # Set the translated value in the JSON data
-        $new_hash{ $parameter_map{$parameter} } = $new_value;
+        $new_hash{ $filament_parameter_map{$parameter} } = $new_value;
 
         # Track the maximum commanded nozzle temperature
         $max_temp = $new_value
@@ -225,19 +240,24 @@ foreach my $input_file (@expanded_input_files) {
     }
 
     # Add additional metadata to the JSON data
-    $new_hash{'filament_settings_id'}         = $file;
-    $new_hash{'name'}                         = $file;
-    $new_hash{'from'}                         = 'User';
-    $new_hash{'is_custom_defined'}            = '1';
-    $new_hash{'nozzle_temperature_range_low'} = '0';
-    $new_hash{'nozzle_temperature_range_high'} =
-      "" . $max_temp;    # Must cast as a string before JSON encoding
-    $new_hash{'slow_down_for_layer_cooling'} =
-      $superslicer_ini->{_}{'slowdown_below_layer_time'} > 0 ? '1' : '0';
-    $new_hash{'version'} = '1.6.0.0';
+    %new_hash = (
+        %new_hash,
+        filament_settings_id          => $file,
+        name                          => $file,
+        from                          => 'User',
+        is_custom_defined             => '1',
+        nozzle_temperature_range_low  => '0',
+        nozzle_temperature_range_high => "" . $max_temp,
+        slow_down_for_layer_cooling   => (
+            ( $superslicer_ini->{_}{'slowdown_below_layer_time'} > 0 )
+            ? '1'
+            : '0'
+        ),
+        version => $ORCA_SLICER_VERSION
+    );
 
     # Construct the output filename
-    my $output_file = $output_directory . $file . ".json";
+    my $output_file = File::Spec->catfile($output_directory, $file . ".json");
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
