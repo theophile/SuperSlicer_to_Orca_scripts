@@ -237,7 +237,7 @@ foreach my $input_file (@expanded_input_files) {
     $new_hash{'version'} = '1.6.0.0';
 
     # Construct the output filename
-    my $output_file = $output_directory . $file . ".json";
+    my $output_file = File::Spec->catfile($output_directory, $file . ".json");
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
