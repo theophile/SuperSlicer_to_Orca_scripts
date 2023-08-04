@@ -237,9 +237,9 @@ foreach my $input_file (@expanded_input_files) {
     %new_hash = ();
 
     # Read the input INI file
-    my %superslicer_ini = ini_reader($input_file);
-
-    #or die "Error reading $input_file: $!";
+    my %superslicer_ini = ini_reader($input_file)
+      or die "Error reading $input_file: $!";
+    
     my $max_temp = 0;    # Variable to keep track of maximum temperature
 
     # Loop through each parameter in the INI file
@@ -247,10 +247,8 @@ foreach my $input_file (@expanded_input_files) {
 
         my $new_value = convert_filament_params( $parameter, %superslicer_ini );
 
+        # Move on if we didn't get a usable value
         next if ( !defined $new_value );
-
-        # Ignore SuperSlicer parameters that Orca Slicer doesn't support
-        next unless exists $filament_parameter_map{$parameter};
 
         # Set the translated value in the JSON data
         $new_hash{ $filament_parameter_map{$parameter} } = $new_value;
@@ -283,8 +281,8 @@ foreach my $input_file (@expanded_input_files) {
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
-        die
-"Output file '$output_file' already exists. Use --overwrite to force overwriting.\n";
+        die "Output file '$output_file' already exists. 
+          Use --overwrite to force overwriting.\n";
     }
 
     # Write the JSON data to the output file
