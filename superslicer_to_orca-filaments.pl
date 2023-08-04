@@ -7,7 +7,6 @@ use File::Basename;
 use File::Glob ':glob';
 use File::Spec;
 use String::Escape qw(unbackslash);
-use Config::Tiny;
 use JSON;
 
 # Subroutine to print usage instructions and exit
@@ -144,6 +143,24 @@ my %default_MVS = (
     SCAFF => '8'
 );
 
+# Subroutine to parse an .ini file and return a hash with all key/value pairs
+sub ini_reader {
+    my ($filename) = @_;
+
+    open my $fh, '<', $filename or die "Cannot open '$filename': $!";
+    my %config;
+
+    while ( my $line = <$fh> ) {
+        next if $line =~ /^\s*(?:#|$)/;    # Skip empty and comment lines
+
+        my ( $key, $value ) =
+          map { s/^\s+|\s+$//gr } split /\s* = \s*/, $line, 2;
+        $config{$key} = $value;
+    }
+    close $fh;
+    return %config;
+}
+
 # Expand wildcards and process each input file
 my @expanded_input_files;
 foreach my $pattern (@input_files) {
@@ -159,18 +176,18 @@ foreach my $input_file (@expanded_input_files) {
     my %new_hash = ();
 
     # Read the input INI file
-    my $superslicer_ini = Config::Tiny->read( $input_file, 'utf8' )
-      or die "Error reading $input_file: $!";
+    my %superslicer_ini = ini_reader($input_file);
+      #or die "Error reading $input_file: $!";
     my $max_temp = 0;    # Variable to keep track of maximum temperature
 
     # Loop through each parameter in the INI file
-    foreach my $parameter ( keys %{ $superslicer_ini->{_} } ) {
+    foreach my $parameter (keys %superslicer_ini) {
 
         # Ignore SuperSlicer parameters that Orca Slicer doesn't support
         next unless exists $parameter_map{$parameter};
 
         # Get the value of the current parameter from the INI file
-        my $new_value = $superslicer_ini->{_}->{$parameter};
+        my $new_value = $superslicer_ini{$parameter};
 
         # If the SuperSlicer value is 'nil,' skip this parameter and let
         # Orca Slicer use its own default
@@ -205,7 +222,7 @@ foreach my $input_file (@expanded_input_files) {
             my $mvs =
               ( $new_value > 0 )
               ? $new_value
-              : $default_MVS{ $superslicer_ini->{_}->{'filament_type'} };
+              : $default_MVS{ $superslicer_ini{'filament_type'} };
             $new_value = "" . $mvs; # Must cast as a string before JSON encoding
         }
         elsif ( $parameter eq 'external_perimeter_fan_speed' ) {
@@ -233,7 +250,7 @@ foreach my $input_file (@expanded_input_files) {
     $new_hash{'nozzle_temperature_range_high'} =
       "" . $max_temp;    # Must cast as a string before JSON encoding
     $new_hash{'slow_down_for_layer_cooling'} =
-      $superslicer_ini->{_}{'slowdown_below_layer_time'} > 0 ? '1' : '0';
+      $superslicer_ini{'slowdown_below_layer_time'} > 0 ? '1' : '0';
     $new_hash{'version'} = '1.6.0.0';
 
     # Construct the output filename
