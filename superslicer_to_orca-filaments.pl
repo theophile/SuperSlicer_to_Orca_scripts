@@ -7,7 +7,6 @@ use File::Basename;
 use File::Glob ':glob';
 use File::Spec;
 use String::Escape qw(unbackslash);
-use Config::Tiny;
 use JSON;
 
 # Constants
@@ -152,12 +151,13 @@ my %default_MVS = (
 my %new_hash = ();
 
 sub convert_filament_params {
-    my ( $parameter, $superslicer_ini ) = @_;
+    my ( $parameter, %superslicer_ini ) = @_;
+
     # Ignore SuperSlicer parameters that Orca Slicer doesn't support
     return unless exists $filament_parameter_map{$parameter};
 
     # Get the value of the current parameter from the INI file
-    my $new_value = $superslicer_ini->{_}->{$parameter};
+    my $new_value = $superslicer_ini{$parameter};
 
     # If the SuperSlicer value is 'nil,' skip this parameter and let
     # Orca Slicer use its own default
@@ -192,7 +192,7 @@ sub convert_filament_params {
         my $mvs =
           ( $new_value > 0 )
           ? $new_value
-          : $default_MVS{ $superslicer_ini->{_}->{'filament_type'} };
+          : $default_MVS{ $superslicer_ini{'filament_type'} };
         $new_value = "" . $mvs;    # Must cast as a string before JSON encoding
     }
     elsif ( $parameter eq 'external_perimeter_fan_speed' ) {
@@ -202,6 +202,24 @@ sub convert_filament_params {
         $new_value = ( $new_value < 0 ) ? '0%' : "$new_value%";
     }
     return $new_value;
+}
+
+# Subroutine to parse an .ini file and return a hash with all key/value pairs
+sub ini_reader {
+    my ($filename) = @_;
+
+    open my $fh, '<', $filename or die "Cannot open '$filename': $!";
+    my %config;
+
+    while ( my $line = <$fh> ) {
+        next if $line =~ /^\s*(?:#|$)/;    # Skip empty and comment lines
+
+        my ( $key, $value ) =
+          map { s/^\s+|\s+$//gr } split /\s* = \s*/, $line, 2;
+        $config{$key} = $value;
+    }
+    close $fh;
+    return %config;
 }
 
 # Expand wildcards and process each input file
@@ -219,16 +237,20 @@ foreach my $input_file (@expanded_input_files) {
     %new_hash = ();
 
     # Read the input INI file
-    my $superslicer_ini = Config::Tiny->read( $input_file, 'utf8' )
-      or die "Error reading $input_file: $!";
+    my %superslicer_ini = ini_reader($input_file);
+
+    #or die "Error reading $input_file: $!";
     my $max_temp = 0;    # Variable to keep track of maximum temperature
 
     # Loop through each parameter in the INI file
-    foreach my $parameter ( keys %{ $superslicer_ini->{_} } ) {
+    foreach my $parameter ( keys %superslicer_ini ) {
 
-        my $new_value = convert_filament_params( $parameter, $superslicer_ini );
+        my $new_value = convert_filament_params( $parameter, %superslicer_ini );
 
-        next if (!defined $new_value);
+        next if ( !defined $new_value );
+
+        # Ignore SuperSlicer parameters that Orca Slicer doesn't support
+        next unless exists $filament_parameter_map{$parameter};
 
         # Set the translated value in the JSON data
         $new_hash{ $filament_parameter_map{$parameter} } = $new_value;
@@ -249,7 +271,7 @@ foreach my $input_file (@expanded_input_files) {
         nozzle_temperature_range_low  => '0',
         nozzle_temperature_range_high => "" . $max_temp,
         slow_down_for_layer_cooling   => (
-            ( $superslicer_ini->{_}{'slowdown_below_layer_time'} > 0 )
+            ( $superslicer_ini{'slowdown_below_layer_time'} > 0 )
             ? '1'
             : '0'
         ),
@@ -257,7 +279,7 @@ foreach my $input_file (@expanded_input_files) {
     );
 
     # Construct the output filename
-    my $output_file = File::Spec->catfile($output_directory, $file . ".json");
+    my $output_file = File::Spec->catfile( $output_directory, $file . ".json" );
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
