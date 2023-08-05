@@ -854,7 +854,8 @@ foreach my $input_file (@expanded_input_files) {
       or die "Error reading $input_file: $!";
 
     if ( !defined $slicer_flavor ) {
-        die "Could not detect slicer flavor for $input_file!";
+        print "Could not detect slicer flavor for $input_file! Skipping...\n";
+        next;
     }
 
     $ini_type = detect_ini_type(%source_ini);
