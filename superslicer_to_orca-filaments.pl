@@ -150,14 +150,17 @@ my %default_MVS = (
 # Initialize a hash to store translated JSON data
 my %new_hash = ();
 
+# Initialize a variable to keep track of maximum filament temp
+my $max_temp = 0;    
+
 sub convert_filament_params {
-    my ( $parameter, %superslicer_ini ) = @_;
+    my ( $parameter, %source_ini ) = @_;
 
     # Ignore SuperSlicer parameters that Orca Slicer doesn't support
     return unless exists $filament_parameter_map{$parameter};
 
     # Get the value of the current parameter from the INI file
-    my $new_value = $superslicer_ini{$parameter};
+    my $new_value = $source_ini{$parameter};
 
     # If the SuperSlicer value is 'nil,' skip this parameter and let
     # Orca Slicer use its own default
@@ -192,7 +195,7 @@ sub convert_filament_params {
         my $mvs =
           ( $new_value > 0 )
           ? $new_value
-          : $default_MVS{ $superslicer_ini{'filament_type'} };
+          : $default_MVS{ $source_ini{'filament_type'} };
         $new_value = "" . $mvs;    # Must cast as a string before JSON encoding
     }
     elsif ( $parameter eq 'external_perimeter_fan_speed' ) {
@@ -222,6 +225,12 @@ sub ini_reader {
     return %config;
 }
 
+###################
+#                 #
+#    MAIN LOOP    #
+#                 #
+###################
+
 # Expand wildcards and process each input file
 my @expanded_input_files;
 foreach my $pattern (@input_files) {
@@ -233,25 +242,24 @@ foreach my $input_file (@expanded_input_files) {
     # Extract filename, directory, and extension from the input file
     my ( $file, $dir, $ext ) = fileparse( $input_file, qr/\.[^.]*/ );
 
-    # Clear the JSON hash
+    # Clear the JSON hash and reset tracking variables
     %new_hash = ();
+    $max_temp = 0; 
 
     # Read the input INI file
-    my %superslicer_ini = ini_reader($input_file)
+    my %source_ini = ini_reader($input_file)
       or die "Error reading $input_file: $!";
     
-    my $max_temp = 0;    # Variable to keep track of maximum temperature
-
     # Loop through each parameter in the INI file
-    foreach my $parameter ( keys %superslicer_ini ) {
+    foreach my $parameter ( keys %source_ini ) {
 
-        my $new_value = convert_filament_params( $parameter, %superslicer_ini );
+        my $new_value = convert_filament_params( $parameter, %source_ini );
 
-        # Move on if we didn't get a usable value
-        next if ( !defined $new_value );
-
-        # Set the translated value in the JSON data
-        $new_hash{ $filament_parameter_map{$parameter} } = $new_value;
+        # Move on if we didn't get a usable value. Otherwise, set the translated
+        # value in the JSON data
+        ( defined $new_value )
+          ? $new_hash{ $filament_parameter_map{$parameter} } = $new_value
+          : next;
 
         # Track the maximum commanded nozzle temperature
         $max_temp = $new_value
@@ -259,21 +267,28 @@ foreach my $input_file (@expanded_input_files) {
           && $new_value > $max_temp;
     }
 
-    # Add additional metadata to the JSON data
+    my $type = 'filament';
+
+    # Add additional general metadata to the JSON data
     %new_hash = (
         %new_hash,
-        filament_settings_id          => $file,
+        $type . "_settings_id"          => $file,
         name                          => $file,
         from                          => 'User',
         is_custom_defined             => '1',
+        version => $ORCA_SLICER_VERSION
+    );
+
+    # Add additional filament metadata to the JSON data
+    %new_hash = (
+        %new_hash,
         nozzle_temperature_range_low  => '0',
         nozzle_temperature_range_high => "" . $max_temp,
         slow_down_for_layer_cooling   => (
-            ( $superslicer_ini{'slowdown_below_layer_time'} > 0 )
+            ( $source_ini{'slowdown_below_layer_time'} > 0 )
             ? '1'
             : '0'
-        ),
-        version => $ORCA_SLICER_VERSION
+        )
     );
 
     # Construct the output filename
