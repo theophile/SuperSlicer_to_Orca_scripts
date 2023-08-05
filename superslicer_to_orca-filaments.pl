@@ -6,6 +6,7 @@ use Getopt::Long;
 use File::Basename;
 use File::Glob ':glob';
 use File::Spec;
+use List::Util;
 use String::Escape qw(unbackslash);
 use JSON;
 
@@ -58,6 +59,138 @@ unless ( -d $output_directory ) {
 unless ( -w $output_directory ) {
     die("Output directory $output_directory is not writable.\n");
 }
+
+# Define parameter mappings for translating the SuperSlicer INI settings
+# to Orca Slicer JSON keys
+my %print_parameter_map = (
+    arc_fitting                     => 'enable_arc_fitting',
+    bottom_solid_layers             => 'bottom_shell_layers',
+    bottom_solid_min_thickness      => 'bottom_shell_thickness',
+    bridge_acceleration             => 'bridge_acceleration',
+    bridge_angle                    => 'bridge_angle',
+    bridge_overlap_min              => 'bridge_density',
+    dont_support_bridges            => 'bridge_no_support',
+    brim_separation                 => 'brim_object_gap',
+    brim_width                      => 'brim_width',
+    compatible_printers_condition   => 'compatible_printers_condition',
+    compatible_printers             => 'compatible_printers',
+    default_acceleration            => 'default_acceleration',
+    overhangs                       => 'detect_overhang_wall',
+    thin_walls                      => 'detect_thin_wall',
+    draft_shield                    => 'draft_shield',
+    first_layer_size_compensation   => 'elefant_foot_compensation',
+    enable_dynamic_overhang_speeds  => 'enable_overhang_speed',
+    wipe_tower                      => 'enable_prime_tower',
+    ensure_vertical_shell_thickness => 'ensure_vertical_shell_thickness',
+    gap_fill_min_length             => 'filter_out_gap_fill',
+    gcode_comments                  => 'gcode_comments',
+    gcode_label_objects             => 'gcode_label_objects',
+    infill_anchor_max               => 'infill_anchor_max',
+    infill_anchor                   => 'infill_anchor',
+    fill_angle                      => 'infill_direction',
+    infill_overlap                  => 'infill_wall_overlap',
+    inherits                        => 'inherits',
+    extrusion_width                 => 'line_width',
+    first_layer_acceleration        => 'initial_layer_acceleration',
+    first_layer_extrusion_width     => 'initial_layer_line_width',
+    first_layer_height              => 'initial_layer_print_height',
+    interface_shells                => 'interface_shells',
+    perimeter_extrusion_width       => 'inner_wall_line_width',
+    seam_gap                        => 'seam_gap',
+    solid_infill_acceleration       => 'internal_solid_infill_acceleration',
+    solid_infill_extrusion_width    => 'internal_solid_infill_line_width',
+    ironing_flowrate                => 'ironing_flow',
+    ironing_spacing                 => 'ironing_spacing',
+    ironing_speed                   => 'ironing_speed',
+    layer_height                    => 'layer_height',
+    avoid_crossing_perimeters_max_detour     => 'max_travel_detour_distance',
+    min_bead_width                           => 'min_bead_width',
+    min_feature_size                         => 'min_feature_size',
+    solid_infill_below_area                  => 'minimum_sparse_infill_area',
+    only_one_perimeter_first_layer           => 'only_one_wall_first_layer',
+    only_one_perimeter_top                   => 'only_one_wall_top',
+    ooze_prevention                          => 'ooze_prevention',
+    external_perimeter_acceleration          => 'outer_wall_acceleration',
+    external_perimeter_extrusion_width       => 'outer_wall_line_width',
+    post_process                             => 'post_process',
+    wipe_tower_brim_width                    => 'prime_tower_brim_width',
+    wipe_tower_width                         => 'prime_tower_width',
+    raft_contact_distance                    => 'raft_contact_distance',
+    raft_expansion                           => 'raft_expansion',
+    raft_first_layer_density                 => 'raft_first_layer_density',
+    raft_first_layer_expansion               => 'raft_first_layer_expansion',
+    raft_layers                              => 'raft_layers',
+    avoid_crossing_perimeters                => 'reduce_crossing_wall',
+    only_retract_when_crossing_perimeters    => 'reduce_infill_retraction',
+    resolution                               => 'resolution',
+    seam_position                            => 'seam_position',
+    skirt_distance                           => 'skirt_distance',
+    skirt_height                             => 'skirt_height',
+    skirts                                   => 'skirt_loops',
+    slice_closing_radius                     => 'slice_closing_radius',
+    slicing_mode                             => 'slicing_mode',
+    small_perimeter_min_length               => 'small_perimeter_threshold',
+    infill_acceleration                      => 'sparse_infill_acceleration',
+    fill_density                             => 'sparse_infill_density',
+    infill_extrusion_width                   => 'sparse_infill_line_width',
+    staggered_inner_seams                    => 'staggered_inner_seams',
+    standby_temperature_delta                => 'standby_temperature_delta',
+    support_material                         => 'enable_support',
+    support_material_angle                   => 'support_angle',
+    support_material_enforce_layers          => 'enforce_support_layers',
+    support_material_spacing                 => 'support_base_pattern_spacing',
+    support_material_contact_distance        => 'support_top_z_distance',
+    support_material_bottom_contact_distance => 'support_bottom_z_distance',
+    support_material_bottom_interface_layers =>
+      'support_interface_bottom_layers',
+    support_material_interface_contact_loops =>
+      'support_interface_loop_pattern',
+    support_material_interface_spacing => 'support_interface_spacing',
+    support_material_interface_layers  => 'support_interface_top_layers',
+    support_material_extrusion_width   => 'support_line_width',
+    support_material_buildplate_only   => 'support_on_build_plate_only',
+    support_material_threshold         => 'support_threshold_angle',
+    thick_bridges                      => 'thick_bridges',
+    top_solid_layers                   => 'top_shell_layers',
+    top_solid_min_thickness            => 'top_shell_thickness',
+    top_solid_infill_acceleration      => 'top_surface_acceleration',
+    top_infill_extrusion_width         => 'top_surface_line_width',
+    travel_acceleration                => 'travel_acceleration',
+    travel_speed_z                     => 'travel_speed_z',
+    travel_speed                       => 'travel_speed',
+    support_tree_angle                 => 'tree_support_branch_angle',
+    support_tree_branch_diameter       => 'tree_support_branch_diameter',
+    wall_distribution_count            => 'wall_distribution_count',
+    perimeter_generator                => 'wall_generator',
+    perimeters                         => 'wall_loops',
+    wall_transition_angle              => 'wall_transition_angle',
+    wall_transition_filter_deviation   => 'wall_transition_filter_deviation',
+    wall_transition_length             => 'wall_transition_length',
+    wipe_tower_no_sparse_layers        => 'wipe_tower_no_sparse_layers',
+    xy_size_compensation               => 'xy_contour_compensation',
+    xy_inner_size_compensation         => 'xy_hole_compensation',
+    support_material_layer_height      => 'independent_support_layer_height',
+    fill_pattern                       => 'sparse_infill_pattern',
+    output_filename_format             => 'filename_format',
+    support_material_pattern           => 'support_base_pattern',
+    support_material_interface_pattern => 'support_interface_pattern',
+    top_fill_pattern                   => 'top_surface_pattern',
+    support_material_xy_spacing        => 'support_object_xy_distance',
+    fuzzy_skin_point_dist              => 'fuzzy_skin_point_distance',
+    fuzzy_skin_thickness               => 'fuzzy_skin_thickness',
+    fuzzy_skin                         => 'fuzzy_skin',
+    bottom_fill_pattern                => 'bottom_surface_pattern',
+    bridge_flow_ratio                  => 'bridge_flow',
+    fill_top_flow_ratio                => 'top_solid_infill_flow_ratio',
+    infill_every_layers                => 'infill_combination',
+    complete_objects                   => 'print_sequence',
+    brim_type                          => 'brim_type',
+    support_material_style             => 1,
+    ironing                            => 1,
+    ironing_type                       => 1,
+    external_perimeters_first          => 1,
+    infill_first                       => 1
+);
 
 # Define parameter mappings for translating the SuperSlicer INI settings
 # to Orca Slicer JSON keys
@@ -153,6 +286,17 @@ my %new_hash = ();
 # Initialize a variable to keep track of maximum filament temp
 my $max_temp = 0;    
 
+# Subroutine to detect what type of ini file it's being fed
+sub detect_ini_type {
+    my %source_ini = @_;
+    my ($filament_count, $print_count) = 0,0;
+    foreach my $parameter ( keys %source_ini ) {
+        $filament_count += 1 if exists $filament_parameter_map{$parameter};
+        $print_count += 1 if exists $print_parameter_map{$parameter};
+    }
+    return ($filament_count > $print_count)? 'filament' : 'print';
+}
+
 sub convert_filament_params {
     my ( $parameter, %source_ini ) = @_;
 
@@ -211,10 +355,15 @@ sub convert_filament_params {
 sub ini_reader {
     my ($filename) = @_;
 
-    open my $fh, '<', $filename or die "Cannot open '$filename': $!";
+    open my $fh, '<', $filename or die "Cannot open '$filename': $!\n";
     my %config;
+    my $flavor = undef;
 
     while ( my $line = <$fh> ) {
+
+        # Detect which slicer we're importing from
+        $flavor = $1 if ( $line =~ /^#\s*generated\s+by\s+(\S+)/i );
+
         next if $line =~ /^\s*(?:#|$)/;    # Skip empty and comment lines
 
         my ( $key, $value ) =
@@ -222,7 +371,7 @@ sub ini_reader {
         $config{$key} = $value;
     }
     close $fh;
-    return %config;
+    return $flavor, %config;
 }
 
 ###################
@@ -241,19 +390,32 @@ foreach my $input_file (@expanded_input_files) {
 
     # Extract filename, directory, and extension from the input file
     my ( $file, $dir, $ext ) = fileparse( $input_file, qr/\.[^.]*/ );
-
+   
     # Clear the JSON hash and reset tracking variables
     %new_hash = ();
     $max_temp = 0; 
 
-    # Read the input INI file
-    my %source_ini = ini_reader($input_file)
+    # Read the input INI file and set source slicer flavor
+    my ($slicer_flavor, %source_ini) = ini_reader($input_file)
       or die "Error reading $input_file: $!";
+
+    if (!defined $slicer_flavor) {
+        die "Could not detect slicer flavor for $input_file!";
+    }
+
+    my $ini_type = detect_ini_type(%source_ini);
     
+    #print "This is a $ini_type config file generated by $slicer_flavor!\n";
+    #next;
+
     # Loop through each parameter in the INI file
     foreach my $parameter ( keys %source_ini ) {
 
-        my $new_value = convert_filament_params( $parameter, %source_ini );
+        my $new_value = undef;
+
+        if ($ini_type eq 'filament') {
+            $new_value = convert_filament_params( $parameter, %source_ini );
+        }
 
         # Move on if we didn't get a usable value. Otherwise, set the translated
         # value in the JSON data
@@ -267,29 +429,30 @@ foreach my $input_file (@expanded_input_files) {
           && $new_value > $max_temp;
     }
 
-    my $type = 'filament';
-
     # Add additional general metadata to the JSON data
     %new_hash = (
         %new_hash,
-        $type . "_settings_id"          => $file,
-        name                          => $file,
-        from                          => 'User',
-        is_custom_defined             => '1',
-        version => $ORCA_SLICER_VERSION
+        $ini_type . "_settings_id" => $file,
+        name                       => $file,
+        from                       => 'User',
+        is_custom_defined          => '1',
+        version                    => $ORCA_SLICER_VERSION
     );
 
     # Add additional filament metadata to the JSON data
-    %new_hash = (
-        %new_hash,
-        nozzle_temperature_range_low  => '0',
-        nozzle_temperature_range_high => "" . $max_temp,
-        slow_down_for_layer_cooling   => (
-            ( $source_ini{'slowdown_below_layer_time'} > 0 )
-            ? '1'
-            : '0'
-        )
-    );
+    if ( $ini_type eq 'filament' ) {
+        %new_hash = (
+            %new_hash,
+            nozzle_temperature_range_low  => '0',
+            nozzle_temperature_range_high => "" . $max_temp,
+            slow_down_for_layer_cooling   => (
+                ( $source_ini{'slowdown_below_layer_time'} > 0 )
+                ? '1'
+                : '0'
+            )
+        );
+    }
+
 
     # Construct the output filename
     my $output_file = File::Spec->catfile( $output_directory, $file . ".json" );
@@ -307,5 +470,5 @@ foreach my $input_file (@expanded_input_files) {
     print $fh $json;
     close $fh;
 
-    print "Translated '$input_file' to '$output_file'.\n";
+    print "\nTranslated '$input_file' to '$output_file'.\n";
 }
