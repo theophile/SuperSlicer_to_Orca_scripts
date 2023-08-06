@@ -364,6 +364,57 @@ my %parameter_map = (
         filament_vendor                      => 'filament_vendor',
         filament_minimal_purge_on_wipe_tower =>
           'filament_minimal_purge_on_wipe_tower'
+    },
+
+    'printer' => {
+        bed_custom_model                   => 'bed_custom_model',
+        bed_custom_texture                 => 'bed_custom_texture',
+        before_layer_gcode                 => 'before_layer_change_gcode',
+        toolchange_gcode                   => 'change_filament_gcode',
+        default_filament_profile           => 'default_filament_profile',
+        default_print_profile              => 'default_print_profile',
+        deretract_speed                    => 'deretraction_speed',
+        gcode_flavor                       => 'gcode_flavor',
+        inherits                           => 'inherits',
+        layer_gcode                        => 'layer_change_gcode',
+        end_gcode                          => 'machine_end_gcode',
+        machine_max_acceleration_e         => 'machine_max_acceleration_e',
+        machine_max_acceleration_extruding =>
+          'machine_max_acceleration_extruding',
+        machine_max_acceleration_retracting =>
+          'machine_max_acceleration_retracting',
+        machine_max_acceleration_travel  => 'machine_max_acceleration_travel',
+        machine_max_acceleration_x       => 'machine_max_acceleration_x',
+        machine_max_acceleration_y       => 'machine_max_acceleration_y',
+        machine_max_acceleration_z       => 'machine_max_acceleration_z',
+        machine_max_jerk_e               => 'machine_max_jerk_e',
+        machine_max_jerk_x               => 'machine_max_jerk_x',
+        machine_max_jerk_y               => 'machine_max_jerk_y',
+        machine_max_jerk_z               => 'machine_max_jerk_z',
+        machine_min_extruding_rate       => 'machine_min_extruding_rate',
+        machine_min_travel_rate          => 'machine_min_travel_rate',
+        pause_print_gcode                => 'machine_pause_gcode',
+        start_gcode                      => 'machine_start_gcode',
+        max_layer_height                 => 'max_layer_height',
+        min_layer_height                 => 'min_layer_height',
+        nozzle_diameter                  => 'nozzle_diameter',
+        print_host                       => 'print_host',
+        bed_shape                        => 'printable_area',
+        max_print_height                 => 'printable_height',
+        printer_settings_id              => 'printer_settings_id',
+        printer_technology               => 'printer_technology',
+        printer_variant                  => 'printer_variant',
+        retract_before_wipe              => 'retract_before_wipe',
+        retract_length_toolchange        => 'retract_length_toolchange',
+        retract_restart_extra_toolchange => 'retract_restart_extra_toolchange',
+        retract_restart_extra            => 'retract_restart_extra',
+        retract_layer_change             => 'retract_when_changing_layer',
+        retract_length                   => 'retraction_length',
+        retract_before_travel            => 'retraction_minimum_travel',
+        retract_speed                    => 'retraction_speed',
+        silent_mode                      => 'silent_mode',
+        single_extruder_multi_material   => 'single_extruder_multi_material',
+        thumbnails                       => 'thumbnails'
     }
 );
 
@@ -490,19 +541,69 @@ my %interface_patterns = (
     grid                   => 1
 );
 
+# Recognized gcode flavors
+my %gcode_flavors = (
+    klipper        => 1,
+    mach3          => 1,
+    machinekit     => 1,
+    makerware      => 1,
+    marlin         => 1,
+    marlin2        => 1,
+    'no-extrusion' => 1,
+    repetier       => 1,
+    reprap         => 1,
+    reprapfirmware => 1,
+    sailfish       => 1,
+    smoothie       => 1,
+    teacup         => 1,
+);
+
+# Recognized printer host types
+my %host_types = (
+    repetier  => 'repetier',
+    prusalink => 'prusalink',
+    octoprint => 'octoprint',
+    moonraker => 'octoprint',
+    mks       => 'mks',
+    klipper   => 'octoprint',
+    flashair  => 'flashair',
+    duet      => 'duet',
+    astrobox  => 'astrobox',
+);
+
+# Mapping of Z-hop enforcement schemes
+my %zhop_enforcement = (
+    'All surfaces' => 'All Surfaces',
+    'Not on top'   => 'Bottom Only',
+    'Only on top'  => 'Top Only',
+);
+
 # Subroutine to detect what type of ini file it's being fed
 sub detect_ini_type {
     my %source_ini = @_;
-    my ( $filament_count, $print_count ) = 0, 0;
-    foreach my $parameter ( keys %source_ini ) {
-        $filament_count += 1 if exists $parameter_map{'filament'}{$parameter};
-        $print_count    += 1 if exists $parameter_map{'print'}{$parameter};
-    }
-    if ( ( $filament_count < 10 ) && ( $print_count < 10 ) ) {
-        return;
+
+    # Iterate over the keys of %parameter_map and count parameter occurrences
+    my %type_counts;
+    foreach my $type ( keys %parameter_map ) {
+        $type_counts{$type} = 0;
+        foreach my $parameter ( keys %source_ini ) {
+            $type_counts{$type}++ if exists $parameter_map{$type}{$parameter};
+        }
     }
 
-    return ( $filament_count > $print_count ) ? 'filament' : 'print';
+    # Check if all counts are less than 10; return undef if true
+    my $invalid_ini = 1;
+    foreach my $count ( values %type_counts ) {
+        if ( $count >= 10 ) {
+            $invalid_ini = 0;
+            last;
+        }
+    }
+    return undef if $invalid_ini;
+
+    # Return the key (type) with the highest value (count)
+    return ( sort { $type_counts{$b} <=> $type_counts{$a} } keys %type_counts )
+      [0];
 }
 
 sub convert_params {
