@@ -133,6 +133,14 @@ sub evaluate_ironing_type {
     return "no ironing";
 }
 
+sub percent_to_float {
+    my ($subject_value) = @_;
+    return $subject_value if ( !is_percent($subject_value) );
+    
+    my $new_float = remove_percent($subject_value) / 100;
+    return ( $new_float > 2 ) ? '2' : $new_float;
+}
+
 # Subroutine to convert percentage value to millimeters
 sub percent_to_mm {
     my ( $first_comp, $second_comp, $subject_param ) = @_;
@@ -499,15 +507,16 @@ sub detect_ini_type {
     return ( $filament_count > $print_count ) ? 'filament' : 'print';
 }
 
-sub convert_filament_params {
+sub convert_params {
     my ( $parameter, %source_ini ) = @_;
 
     # Get the value of the current parameter from the INI file
-    my $new_value = $source_ini{$parameter};
+    my $new_value = $source_ini{$parameter} // undef;
 
-    # If the SuperSlicer value is 'nil,' skip this parameter and let
-    # Orca Slicer use its own default
-    return if ( $new_value eq 'nil' );
+    # SuperSlicer has a "default_speed" parameter that PrusaSlicer doesn't,
+    # and a lot of percentages are based on that default
+    my $default_speed = $source_ini{'default_speed'}
+      if ( $slicer_flavor eq 'SuperSlicer' );
 
     # Check if the parameter maps to multiple keys in the JSON data
     if ( ref( $parameter_map{$ini_type}{$parameter} ) eq 'ARRAY' ) {
@@ -518,168 +527,230 @@ sub convert_filament_params {
         return;
     }
 
-    # Handle special cases for specific parameter keys
-    if ( $parameter =~ /^(start_filament_gcode|end_filament_gcode)/ ) {
-
-        # The custom gcode blocks need to be unquoted and unbackslashed
-        # before JSON encoding
-        $new_value =~ s/^"(.*)"$/$1/;
-        $new_value = [ unbackslash($new_value) ];
-    }
-    elsif ( $parameter eq 'filament_type' ) {
-
-        # Translate filament type to a specific value if it exists in
-        # the mapping, otherwise keep the original value
-        $new_value = $filament_types{$new_value} // $new_value;
-    }
-    elsif ( $parameter eq 'filament_max_volumetric_speed' ) {
-
-        # Max volumetric speed can't be zero so use a reasonable default
-        # if necessary
-        my $mvs =
-          ( $new_value > 0 )
-          ? $new_value
-          : $default_MVS{ $source_ini{'filament_type'} };
-        $new_value = "" . $mvs;    # Must cast as a string before JSON encoding
-    }
-    elsif ( $parameter eq 'external_perimeter_fan_speed' ) {
-
-        # 'external_perimeter_fan_speed' in SS is the closest equivalent to
-        # 'overhang_fan_threshold' in Orca, so convert to percentage
-        $new_value = ( $new_value < 0 ) ? '0%' : "$new_value%";
-    }
-    return $new_value;
-}
-
-sub convert_print_params {
-    my ( $parameter, %source_ini ) = @_;
-
-    # Get the value of the current parameter from the INI file
-    my $new_value = $source_ini{$parameter};
-
-    # If the SuperSlicer value is 'nil,' skip this parameter and let
-    # Orca Slicer use its own default
-    return if ( $new_value eq 'nil' );
-
-    # Handle special cases for specific parameter keys
-
     # Track state of combination settings
     if ( exists $param_to_var{$parameter} ) {
         ${ $param_to_var{$parameter} } = $new_value ? 1 : 0;
         return;
     }
-    elsif ( $parameter eq 'ironing_type' ) {
-        $ironing_type = $new_value;
-        return;
-    }
 
-    if ( $parameter eq 'post_process' ) {
+    my $unbackslash_gcode = sub {
+        $new_value =~ s/^"(.*)"$/$1/;
+        $new_value = [ unbackslash($new_value) ];
+        return $new_value;
+    };
+
+    # Dispatch table for handling special cases
+    my %special_cases = (
+
+        # If the SuperSlicer value is 'nil,' skip this parameter and let
+        # Orca Slicer use its own default
+        'nil' => sub { return },
 
         # The custom gcode blocks need to be unquoted and unbackslashed
         # before JSON encoding
-        $new_value =~ s/^"(.*)"$/$1/;
-        $new_value = [ unbackslash($new_value) ];
+        'start_filament_gcode' => $unbackslash_gcode,
+        'end_filament_gcode'   => $unbackslash_gcode,
+        'post_process'         => $unbackslash_gcode,
+
+        # Translate filament type to a specific value if it exists in
+        # the mapping, otherwise keep the original value
+        'filament_type' => sub {
+            return $filament_types{$new_value} // $new_value;
+        },
+
+        # Max volumetric speed can't be zero so use a reasonable default
+        # if necessary
+        'filament_max_volumetric_speed' => sub {
+            return "" . ( $new_value > 0 )
+              ? $new_value
+              : $default_MVS{ $source_ini{'filament_type'} };
+        },
+
+        # 'external_perimeter_fan_speed' in SS is the closest equivalent to
+        # 'overhang_fan_threshold' in Orca, so convert to percentage
+        'external_perimeter_fan_speed' => sub {
+            return ( $new_value < 0 ) ? '0%' : "$new_value%";
+        },
+
+        # Catch ironing_type and update tracking variable
+        'ironing_type' => sub {
+            $ironing_type = $new_value;
+            return;
+        },
+
+        # Some values need to be converted from percent of nozzle width to
+        # absolute value in mm
+        'fuzzy_skin_point_dist' => sub {
+            return percent_to_mm( $nozzle_size, undef, $new_value );
+        },
+        'fuzzy_skin_thickness' => sub {
+            return percent_to_mm( $nozzle_size, undef, $new_value );
+        },
+        'small_perimeter_min_length' => sub {
+            return percent_to_mm( $nozzle_size, undef, $new_value );
+        },
+
+        # Convert percents to float, capping at 2 as OrcaSlicer expects
+        'bridge_flow_ratio'   => sub { return percent_to_float($new_value) },
+        'fill_top_flow_ratio' => sub { return percent_to_float($new_value) },
+
+        'wall_transition_length' => sub {
+            return mm_to_percent( $nozzle_size, $new_value );
+        },
+
+        # Option "0" means "same as top," so set that manually
+        'support_material_bottom_contact_distance' => sub {
+            if ( $new_value eq '0' ) {
+                return $source_ini{'support_material_contact_distance'};
+            }
+        },
+
+        # OrcaSlicer consolidates three support-material options to two
+        'support_material_style' => sub {
+            my ( $support_type, $support_style ) =
+              @{ $support_styles{$new_value} };
+            my $genstyle =
+              ( !!$source_ini{'support_material_auto'} )
+              ? 'auto'
+              : 'manual';
+            $new_hash{'support_type'}  = "${support_type}(${genstyle})";
+            $new_hash{'support_style'} = $support_style;
+            return;
+        },
+
+        # Translate infill types
+        'fill_pattern'        => sub { return $infill_types{$new_value} },
+        'top_fill_pattern'    => sub { return $infill_types{$new_value} },
+        'bottom_fill_pattern' => sub { return $infill_types{$new_value} },
+
+        # Set support pattern to default if we can't match the original pattern
+        'support_material_pattern' => sub {
+            return ( exists $support_patterns{$new_value} )
+              ? $new_value
+              : 'default';
+        },
+
+        # Set support interface pattern to auto if we can't match it
+        'support_material_interface_pattern' => sub {
+            return ( exists $interface_patterns{$new_value} )
+              ? $new_value
+              : 'auto';
+        },
+
+        # Translate seam position
+        'seam_position' => sub { return $seam_positions{$new_value} },
+
+        # Assume that if support material layer height was specified, we want
+        # independent support layer heights (true/false in OrcaSlicer)
+        'support_material_layer_height' => sub {
+            return ( $new_value > 0 ) ? '1' : '0';
+        },
+
+        # OrcaSlicer uses angle brackets instead of square here
+        'output_filename_format' => sub {
+            return $new_value =~ s/\[|\]/ { $& eq '[' ? '{' : '}' } /egr;
+        },
+
+        # If this is a percent, try to calculate based on external extrusion
+        # width. If that's also a percent, use double the layer height.
+        'support_material_xy_spacing' => sub {
+            $new_value =
+              percent_to_mm( $source_ini{'external_perimeter_extrusion_width'},
+                $nozzle_size, $new_value );
+            defined $new_value ? return "" . $new_value : return;
+        },
+
+        # Convert numerical input to boolean
+        'infill_every_layers' => sub { return ( $new_value > 0 ) ? '1' : '0' },
+
+        # Super/PrusaSlicer have this as boolean where OrcaSlicer offers
+        # choices in a dropdown
+        'complete_objects' =>
+          sub { return ( !!$new_value ) ? 'by object' : 'by layer' },
+
+        'external_perimeter_speed' => sub {
+            return percent_to_mm( $source_ini{'perimeter_speed'},
+                undef, $new_value );
+        },
+        'first_layer_speed' => sub {
+            return percent_to_mm( $source_ini{'perimeter_speed'},
+                undef, $new_value );
+        },
+
+        'top_solid_infill_speed' => sub {
+            return percent_to_mm( $new_hash{'internal_solid_infill_speed'},
+                undef, $new_value );
+        },
+
+        'support_material_interface_speed' => sub {
+            return percent_to_mm( $source_ini{'support_material_speed'},
+                undef, $new_value );
+        },
+
+        'first_layer_infill_speed' => sub {
+            return percent_to_mm( $source_ini{'infill_speed'}, undef,
+                ( $slicer_flavor eq 'PrusaSlicer' )
+                ? $source_ini{'first_layer_speed'}
+                : $new_value );
+        },
+
+        # PrusaSlicer calculates solid infill speed as a percentage of sparse
+        'solid_infill_speed' => sub {
+            return percent_to_mm(
+                ( $slicer_flavor eq 'PrusaSlicer' )
+                ? $source_ini{'infill_speed'}
+                : $default_speed,
+                undef, $new_value
+            );
+        },
+
+        'perimeter_speed' => sub {
+            return ( $slicer_flavor eq 'SuperSlicer' )
+              ? percent_to_mm( $default_speed, undef, $new_value )
+              : $new_value;
+        },
+
+        'support_material_speed' => sub {
+            return ( $slicer_flavor eq 'SuperSlicer' )
+              ? percent_to_mm( $default_speed, undef, $new_value )
+              : $new_value;
+        },
+
+        'bridge_speed' => sub {
+            return ( $slicer_flavor eq 'SuperSlicer' )
+              ? percent_to_mm( $default_speed, undef, $new_value )
+              : $new_value;
+        },
+
+        'infill_speed' => sub {
+            return ( $slicer_flavor eq 'SuperSlicer' )
+              ? percent_to_mm( $new_hash{'internal_solid_infill_speed'},
+                undef, $new_value )
+              : $new_value;
+        },
+
+        'small_perimeter_speed' => sub {
+            return ( $slicer_flavor eq 'SuperSlicer' )
+              ? $new_value =
+              percent_to_mm( $new_hash{'sparse_infill_speed'},
+                undef, $new_value )
+              : $new_value;
+        },
+
+        'gap_fill_speed' => sub {
+            return ( $slicer_flavor eq 'SuperSlicer' )
+              ? $new_value =
+              percent_to_mm( $new_hash{'sparse_infill_speed'},
+                undef, $new_value )
+              : $new_value;
+        },
+
+    );
+
+    if ( exists $special_cases{$parameter} ) {
+        $new_value = $special_cases{$parameter}->();
     }
 
-    elsif (( $parameter eq 'wall_transition_length' )
-        && ( !is_percent($new_value) ) )
-    {
-        $new_value = mm_to_percent( $nozzle_size, $new_value );
-    }
-
-    # Option "0" means "same as top," so set that manually
-    elsif (( $parameter eq 'support_material_bottom_contact_distance' )
-        && ( $new_value eq '0' ) )
-    {
-        $new_value = $source_ini{'support_material_contact_distance'};
-    }
-
-    # OrcaSlicer consolidates three support-material options to two
-    elsif ( $parameter eq 'support_material_style' ) {
-        my ( $support_type, $support_style ) =
-          @{ $support_styles{$new_value} };
-        my $genstyle =
-          ( !!$source_ini{'support_material_auto'} )
-          ? 'auto'
-          : 'manual';
-        $new_hash{'support_type'}  = "${support_type}(${genstyle})";
-        $new_hash{'support_style'} = $support_style;
-        return;
-    }
-
-    # Translate infill types
-    elsif (
-        $parameter =~ /^(fill_pattern|top_fill_pattern|bottom_fill_pattern)$/ )
-    {
-        $new_value = $infill_types{$new_value};
-    }
-
-    # Set support pattern to default if we can't match the original pattern
-    elsif ( $parameter eq 'support_material_pattern' ) {
-        $new_value =
-          ( exists $support_patterns{$new_value} ) ? $new_value : 'default';
-    }
-
-    # Set support interface pattern to auto if we can't match it
-    elsif ( $parameter eq 'support_material_interface_pattern' ) {
-        $new_value =
-          ( exists $interface_patterns{$new_value} ) ? $new_value : 'auto';
-    }
-
-    # Translate seam position
-    elsif ( $parameter eq 'seam_position' ) {
-        $new_value = $seam_positions{$new_value};
-    }
-
-    # Assume that if support material layer height was specified, we want
-    # independent support layer heights (true/false in OrcaSlicer)
-    elsif ( $parameter eq 'support_material_layer_height' ) {
-        $new_value = ( $new_value > 0 ) ? '1' : '0';
-    }
-
-    # OrcaSlicer uses angle brackets instead of square here
-    elsif ( $parameter eq 'output_filename_format' ) {
-        $new_value =~ s/\[|\]/ { $& eq '[' ? '{' : '}' } /eg;
-    }
-
-    # If this is a percent, try to calculate based on external extrusion
-    # width. If that's also a percent, use double the layer height.
-    elsif ( $parameter eq 'support_material_xy_spacing' ) {
-        $new_value =
-          percent_to_mm( $source_ini{'external_perimeter_extrusion_width'},
-            $nozzle_size, $new_value );
-        return if ( !defined $new_value );
-        $new_value = "" . $new_value;
-    }
-
-    # Some values need to be converted from percent of nozzle width to
-    # absolute value in mm
-    elsif ( $parameter =~
-/^(fuzzy_skin_point_dist|fuzzy_skin_thickness|small_perimeter_min_length)$/
-      )
-    {
-        $new_value = percent_to_mm( $nozzle_size, undef, $new_value );
-        return if ( !defined $new_value );
-    }
-
-    # Convert percents to float, capping at 2 as OrcaSlicer expects
-    elsif ( $parameter =~ /^(bridge_flow_ratio|fill_top_flow_ratio)$/ ) {
-        if ( is_percent($new_value) ) {
-            my $new_float = remove_percent($new_value) / 100;
-            $new_value = ( $new_float > 2 ) ? '2' : $new_float;
-        }
-    }
-
-    # Convert numerical input to boolean
-    elsif ( $parameter eq 'infill_every_layers' ) {
-        $new_value = ( $new_value > 0 ) ? '1' : '0';
-    }
-
-    # Super/PrusaSlicer have this as boolean where OrcaSlicer offers
-    # choices in a dropdown
-    elsif ( $parameter eq 'complete_objects' ) {
-        $new_value = ( !!$new_value ) ? 'by object' : 'by layer';
-    }
     return $new_value;
 }
 
@@ -689,62 +760,8 @@ sub calculate_print_params {
     # Translate and convert speed settings because Super/PrusaSlicer allow
     # percent-based speeds where OrcaSlicer requires absolute values
     foreach my $parameter (@speed_sequence) {
-        my $new_value = $source_ini{$parameter} // undef;
 
-        if ( $parameter =~ /^(external_perimeter_speed|first_layer_speed)$/ ) {
-            $new_value =
-              percent_to_mm( $source_ini{'perimeter_speed'},
-                undef, $new_value );
-        }
-        elsif ( $parameter eq 'top_solid_infill_speed' ) {
-            $new_value =
-              percent_to_mm( $new_hash{'internal_solid_infill_speed'},
-                undef, $new_value );
-        }
-        elsif ( $parameter eq 'support_material_interface_speed' ) {
-            $new_value = percent_to_mm( $source_ini{'support_material_speed'},
-                undef, $new_value );
-        }
-        elsif ( $parameter eq 'first_layer_infill_speed' ) {
-            if ( $slicer_flavor eq 'PrusaSlicer' ) {
-                $new_value = percent_to_mm( $source_ini{'infill_speed'},
-                    undef, $source_ini{'first_layer_speed'} );
-            }
-            else {
-                $new_value = percent_to_mm( $source_ini{'infill_speed'},
-                    undef, $new_value );
-            }
-        }
-
-        # PrusaSlicer calculates solid infill speed as a percentage of sparse
-        elsif ($slicer_flavor eq 'PrusaSlicer'
-            && $parameter eq 'solid_infill_speed' )
-        {
-            $new_value =
-              percent_to_mm( $source_ini{'infill_speed'}, undef, $new_value );
-        }
-
-        # SuperSlicer has a "default_speed" parameter that PrusaSlivcer doesn't,
-        # and a lot of percentages are based on that default
-        elsif ( $slicer_flavor eq 'SuperSlicer' ) {
-            my $default_speed = $source_ini{'default_speed'};
-            my @default_percent_params =
-              qw(perimeter_speed solid_infill_speed support_material_speed bridge_speed);
-            if ( grep { $_ eq $parameter } @default_percent_params ) {
-                $new_value = percent_to_mm( $default_speed, undef, $new_value );
-            }
-            elsif ( $parameter eq 'infill_speed' ) {
-                $new_value =
-                  percent_to_mm( $new_hash{'internal_solid_infill_speed'},
-                    undef, $new_value );
-            }
-            elsif ( $parameter =~ /^(small_perimeter_speed|gap_fill_speed)$/ ) {
-                $new_value = percent_to_mm( $new_hash{'sparse_infill_speed'},
-                    undef, $new_value );
-            }
-        }
-
-        next if ( !defined $new_value );
+        my $new_value = convert_params( $parameter, %source_ini );
 
         # Limit mm/s values to one decimal place so OrcaSlicer doesn't choke
         if ( is_decimal($new_value) ) {
@@ -776,6 +793,7 @@ sub calculate_print_params {
     # Set the ironing type based on the tracked options
     $new_hash{'ironing_type'} =
       evaluate_ironing_type( $ironing, $ironing_type );
+
     return %new_hash;
 }
 
@@ -800,24 +818,6 @@ sub ini_reader {
     }
     close $fh;
     return %config;
-}
-
-sub process_params {
-    my ( $parameter, %source_ini ) = @_;
-
-    # Dispatch table
-    my %dispatch = (
-        'filament' => \&convert_filament_params,
-        'print'    => \&convert_print_params,
-    );
-
-    my $subroutine = $dispatch{$ini_type};
-    if ($subroutine) {
-        return $subroutine->( $parameter, %source_ini );
-    }
-    else {
-        die "Invalid ini_type: $ini_type";
-    }
 }
 
 ###################
@@ -862,8 +862,9 @@ foreach my $input_file (@expanded_input_files) {
     }
 
     $ini_type = detect_ini_type(%source_ini);
-    if (!defined $ini_type) {
-        print "Skipping $input_file because it does not appear to be a supported filament or print settings file!\n";
+    if ( !defined $ini_type ) {
+        print
+"Skipping $input_file because it does not appear to be a supported filament or print settings file!\n";
         next;
     }
 
@@ -873,7 +874,7 @@ foreach my $input_file (@expanded_input_files) {
         # Ignore parameters that Orca Slicer doesn't support
         next unless exists $parameter_map{$ini_type}{$parameter};
 
-        my $new_value = process_params( $parameter, %source_ini );
+        my $new_value = convert_params( $parameter, %source_ini );
 
         # Move on if we didn't get a usable value. Otherwise, set the translated
         # value in the JSON data
@@ -926,7 +927,7 @@ foreach my $input_file (@expanded_input_files) {
     # Write the JSON data to the output file
     open my $fh, '>', $output_file
       or die "Cannot open '$output_file' for writing: $!";
-    my $json = JSON->new->pretty->encode( \%new_hash );
+    my $json = JSON->new->pretty->canonical->encode( \%new_hash );
     print $fh $json;
     close $fh;
 
