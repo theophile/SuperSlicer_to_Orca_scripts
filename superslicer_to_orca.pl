@@ -136,14 +136,14 @@ sub evaluate_ironing_type {
 sub percent_to_float {
     my ($subject_value) = @_;
     return $subject_value if ( !is_percent($subject_value) );
-    
+
     my $new_float = remove_percent($subject_value) / 100;
     return ( $new_float > 2 ) ? '2' : $new_float;
 }
 
 # Subroutine to convert percentage value to millimeters
 sub percent_to_mm {
-    my ( $first_comp, $second_comp, $subject_param ) = @_;
+    my ( $comp, $subject_param ) = @_;
 
     if ( defined $subject_param
         && !is_percent($subject_param) )
@@ -151,10 +151,8 @@ sub percent_to_mm {
         return $subject_param;
     }
 
-    for my $component ( $first_comp, $second_comp ) {
-        if ( !is_percent($component) ) {
-            return $component * ( remove_percent($subject_param) / 100 );
-        }
+    if ( !is_percent($comp) ) {
+        return $comp * ( remove_percent($subject_param) / 100 );
     }
 
     return undef;
@@ -581,13 +579,13 @@ sub convert_params {
         # Some values need to be converted from percent of nozzle width to
         # absolute value in mm
         'fuzzy_skin_point_dist' => sub {
-            return percent_to_mm( $nozzle_size, undef, $new_value );
+            return percent_to_mm( $nozzle_size, $new_value );
         },
         'fuzzy_skin_thickness' => sub {
-            return percent_to_mm( $nozzle_size, undef, $new_value );
+            return percent_to_mm( $nozzle_size, $new_value );
         },
         'small_perimeter_min_length' => sub {
-            return percent_to_mm( $nozzle_size, undef, $new_value );
+            return percent_to_mm( $nozzle_size, $new_value );
         },
 
         # Convert percents to float, capping at 2 as OrcaSlicer expects
@@ -652,12 +650,15 @@ sub convert_params {
         },
 
         # If this is a percent, try to calculate based on external extrusion
-        # width. If that's also a percent, use double the layer height.
+        # width. If that's also a percent, use nozzle size.
         'support_material_xy_spacing' => sub {
             $new_value =
               percent_to_mm( $source_ini{'external_perimeter_extrusion_width'},
-                $nozzle_size, $new_value );
-            defined $new_value ? return "" . $new_value : return;
+                $new_value );
+            if ( !defined ) {
+                $new_value = percent_to_mm( $nozzle_size, $new_value );
+            }
+            return defined $new_value ? "" . $new_value : undef;
         },
 
         # Convert numerical input to boolean
@@ -669,26 +670,24 @@ sub convert_params {
           sub { return ( !!$new_value ) ? 'by object' : 'by layer' },
 
         'external_perimeter_speed' => sub {
-            return percent_to_mm( $source_ini{'perimeter_speed'},
-                undef, $new_value );
+            return percent_to_mm( $source_ini{'perimeter_speed'}, $new_value );
         },
         'first_layer_speed' => sub {
-            return percent_to_mm( $source_ini{'perimeter_speed'},
-                undef, $new_value );
+            return percent_to_mm( $source_ini{'perimeter_speed'}, $new_value );
         },
 
         'top_solid_infill_speed' => sub {
             return percent_to_mm( $new_hash{'internal_solid_infill_speed'},
-                undef, $new_value );
+                $new_value );
         },
 
         'support_material_interface_speed' => sub {
             return percent_to_mm( $source_ini{'support_material_speed'},
-                undef, $new_value );
+                $new_value );
         },
 
         'first_layer_infill_speed' => sub {
-            return percent_to_mm( $source_ini{'infill_speed'}, undef,
+            return percent_to_mm( $source_ini{'infill_speed'},
                 ( $slicer_flavor eq 'PrusaSlicer' )
                 ? $source_ini{'first_layer_speed'}
                 : $new_value );
@@ -700,48 +699,44 @@ sub convert_params {
                 ( $slicer_flavor eq 'PrusaSlicer' )
                 ? $source_ini{'infill_speed'}
                 : $default_speed,
-                undef, $new_value
+                $new_value
             );
         },
 
         'perimeter_speed' => sub {
             return ( $slicer_flavor eq 'SuperSlicer' )
-              ? percent_to_mm( $default_speed, undef, $new_value )
+              ? percent_to_mm( $default_speed, $new_value )
               : $new_value;
         },
 
         'support_material_speed' => sub {
             return ( $slicer_flavor eq 'SuperSlicer' )
-              ? percent_to_mm( $default_speed, undef, $new_value )
+              ? percent_to_mm( $default_speed, $new_value )
               : $new_value;
         },
 
         'bridge_speed' => sub {
             return ( $slicer_flavor eq 'SuperSlicer' )
-              ? percent_to_mm( $default_speed, undef, $new_value )
+              ? percent_to_mm( $default_speed, $new_value )
               : $new_value;
         },
 
         'infill_speed' => sub {
             return ( $slicer_flavor eq 'SuperSlicer' )
               ? percent_to_mm( $new_hash{'internal_solid_infill_speed'},
-                undef, $new_value )
+                $new_value )
               : $new_value;
         },
 
         'small_perimeter_speed' => sub {
             return ( $slicer_flavor eq 'SuperSlicer' )
-              ? $new_value =
-              percent_to_mm( $new_hash{'sparse_infill_speed'},
-                undef, $new_value )
+              ? percent_to_mm( $new_hash{'sparse_infill_speed'}, $new_value )
               : $new_value;
         },
 
         'gap_fill_speed' => sub {
             return ( $slicer_flavor eq 'SuperSlicer' )
-              ? $new_value =
-              percent_to_mm( $new_hash{'sparse_infill_speed'},
-                undef, $new_value )
+              ? percent_to_mm( $new_hash{'sparse_infill_speed'}, $new_value )
               : $new_value;
         },
 
