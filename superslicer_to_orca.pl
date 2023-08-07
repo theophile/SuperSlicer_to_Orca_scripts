@@ -101,6 +101,12 @@ sub remove_percent {
     return $value;
 }
 
+# Helper subroutine to convert comma-separated strings to array of values
+sub multivalue_to_array {
+    my ($input_string) = @_;
+    return split( /,/, $input_string );
+}
+
 # Subroutine to translate the feature print sequence settings
 sub evaluate_print_order {
     my ( $external_perimeters_first, $infill_first ) = @_;
@@ -387,6 +393,10 @@ my %parameter_map = (
         machine_max_acceleration_x       => 'machine_max_acceleration_x',
         machine_max_acceleration_y       => 'machine_max_acceleration_y',
         machine_max_acceleration_z       => 'machine_max_acceleration_z',
+        machine_max_feedrate_e           => 'machine_max_speed_e',
+        machine_max_feedrate_x           => 'machine_max_speed_x',
+        machine_max_feedrate_y           => 'machine_max_speed_y',
+        machine_max_feedrate_z           => 'machine_max_speed_z',
         machine_max_jerk_e               => 'machine_max_jerk_e',
         machine_max_jerk_x               => 'machine_max_jerk_x',
         machine_max_jerk_y               => 'machine_max_jerk_y',
@@ -401,7 +411,6 @@ my %parameter_map = (
         print_host                       => 'print_host',
         bed_shape                        => 'printable_area',
         max_print_height                 => 'printable_height',
-        printer_settings_id              => 'printer_settings_id',
         printer_technology               => 'printer_technology',
         printer_variant                  => 'printer_variant',
         retract_before_wipe              => 'retract_before_wipe',
@@ -410,12 +419,57 @@ my %parameter_map = (
         retract_restart_extra            => 'retract_restart_extra',
         retract_layer_change             => 'retract_when_changing_layer',
         retract_length                   => 'retraction_length',
+        retract_lift                     => 'z_hop',
         retract_before_travel            => 'retraction_minimum_travel',
         retract_speed                    => 'retraction_speed',
         silent_mode                      => 'silent_mode',
         single_extruder_multi_material   => 'single_extruder_multi_material',
-        thumbnails                       => 'thumbnails'
+        thumbnails                       => 'thumbnails',
+        template_custom_gcode            => 'template_custom_gcode',
+        wipe                             => 'wipe'
     }
+);
+
+# Printer parameters that may be comma-separated lists
+my %multivalue_params = (
+    max_layer_height                    => 1,
+    min_layer_height                    => 1,
+    deretract_speed                     => 1,
+    machine_max_acceleration_e          => 1,
+    machine_max_acceleration_extruding  => 1,
+    machine_max_acceleration_extruding  => 1,
+    machine_max_acceleration_retracting => 1,
+    machine_max_acceleration_travel     => 1,
+    machine_max_acceleration_x          => 1,
+    machine_max_acceleration_y          => 1,
+    machine_max_acceleration_z          => 1,
+    machine_max_feedrate_e              => 1,
+    machine_max_feedrate_x              => 1,
+    machine_max_feedrate_y              => 1,
+    machine_max_feedrate_z              => 1,
+    machine_max_jerk_e                  => 1,
+    machine_max_jerk_x                  => 1,
+    machine_max_jerk_y                  => 1,
+    machine_max_jerk_z                  => 1,
+    machine_min_extruding_rate          => 1,
+    machine_min_travel_rate             => 1,
+    nozzle_diameter                     => 1,
+    bed_shape                           => 1,
+    retract_before_wipe                 => 1,
+    retract_length_toolchange           => 1,
+    retract_restart_extra_toolchange    => 1,
+    retract_restart_extra               => 1,
+    retract_layer_change                => 1,
+    retract_length                      => 1,
+    retract_lift                        => 1,
+    retract_before_travel               => 1,
+    retract_speed                       => 1,
+    thumbnails                          => 1,
+    extruder_offset                     => 1,
+    retract_lift_above                  => 1,
+    retract_lift_below                  => 1,
+    retract_lift_top                    => 1,
+    wipe                                => 1,
 );
 
 # Mapping of SuperSlicer filament types to their Orca Slicer equivalents
@@ -543,19 +597,20 @@ my %interface_patterns = (
 
 # Recognized gcode flavors
 my %gcode_flavors = (
-    klipper        => 1,
-    mach3          => 1,
-    machinekit     => 1,
-    makerware      => 1,
-    marlin         => 1,
-    marlin2        => 1,
-    'no-extrusion' => 1,
-    repetier       => 1,
-    reprap         => 1,
-    reprapfirmware => 1,
-    sailfish       => 1,
-    smoothie       => 1,
-    teacup         => 1,
+    klipper        => 'klipper',
+    mach3          => 'reprapfirmware',
+    machinekit     => 'reprapfirmware',
+    makerware      => 'reprapfirmware',
+    marlin         => 'marlin',
+    marlin2        => 'marlin',
+    'no-extrusion' => 'reprapfirmware',
+    repetier       => 'reprapfirmware',
+    reprap         => 'reprapfirmware',
+    reprapfirmware => 'reprapfirmware',
+    sailfish       => 'reprapfirmware',
+    smoothie       => 'reprapfirmware',
+    teacup         => 'reprapfirmware',
+    sprinter       => 'reprapfirmware',
 );
 
 # Recognized printer host types
@@ -612,6 +667,11 @@ sub convert_params {
     # Get the value of the current parameter from the INI file
     my $new_value = $source_ini{$parameter} // undef;
 
+    # Some printer parameters need to be converted to arrays
+    if ( exists $multivalue_params{$parameter} ) {
+        $new_value = [ multivalue_to_array($new_value) ];
+    }
+
     # SuperSlicer has a "default_speed" parameter that PrusaSlicer doesn't,
     # and a lot of percentages are based on that default
     my $default_speed = $source_ini{'default_speed'}
@@ -647,9 +707,21 @@ sub convert_params {
 
         # The custom gcode blocks need to be unquoted and unbackslashed
         # before JSON encoding
-        'start_filament_gcode' => $unbackslash_gcode,
-        'end_filament_gcode'   => $unbackslash_gcode,
-        'post_process'         => $unbackslash_gcode,
+        'start_filament_gcode'  => $unbackslash_gcode,
+        'end_filament_gcode'    => $unbackslash_gcode,
+        'post_process'          => $unbackslash_gcode,
+        'before_layer_gcode'    => $unbackslash_gcode,
+        'toolchange_gcode'      => $unbackslash_gcode,
+        'layer_gcode'           => $unbackslash_gcode,
+        'end_gcode'             => $unbackslash_gcode,
+        'pause_print_gcode'     => $unbackslash_gcode,
+        'start_gcode'           => $unbackslash_gcode,
+        'template_custom_gcode' => $unbackslash_gcode,
+
+        'default_filament_profile' => sub {
+            my @new_array = split( /;/, $new_value );
+            return \@new_array;
+        },
 
         # Translate filament type to a specific value if it exists in
         # the mapping, otherwise keep the original value
@@ -677,8 +749,30 @@ sub convert_params {
             return;
         },
 
-        # Some values need to be converted from percent of nozzle width to
+        'retract_lift_top' => sub {
+            my @new_array;
+            foreach my $value (@$new_value) {
+                push @new_array, $zhop_enforcement{$new_value};
+            }
+            return \@new_array;
+        },
+
+        # Some values may need to be converted from percent of nozzle width to
         # absolute value in mm
+        'max_layer_height' => sub {
+            my @new_array;
+            foreach my $value (@$new_value) {
+                push @new_array, percent_to_mm( $nozzle_size, $value );
+            }
+            return \@new_array;
+        },
+        'min_layer_height' => sub {
+            my @new_array;
+            foreach my $value (@$new_value) {
+                push @new_array, percent_to_mm( $nozzle_size, $value );
+            }
+            return \@new_array;
+        },
         'fuzzy_skin_point_dist' => sub {
             return percent_to_mm( $nozzle_size, $new_value );
         },
@@ -721,6 +815,10 @@ sub convert_params {
         'fill_pattern'        => sub { return $infill_types{$new_value} },
         'top_fill_pattern'    => sub { return $infill_types{$new_value} },
         'bottom_fill_pattern' => sub { return $infill_types{$new_value} },
+
+        'gcode_flavor' => sub { return $gcode_flavors{$new_value} // undef; },
+
+        'host_type' => sub { return $host_types{$new_value} },
 
         # Set support pattern to default if we can't match the original pattern
         'support_material_pattern' => sub {
@@ -960,8 +1058,22 @@ foreach my $input_file (@expanded_input_files) {
     $ini_type = detect_ini_type(%source_ini);
     if ( !defined $ini_type ) {
         print
-"Skipping $input_file because it does not appear to be a supported filament or print settings file!\n";
+"Skipping $input_file because it does not appear to be a supported config file!\n";
         next;
+    }
+
+   # If nozzle size isn't specified or detected, use twice layer size as a proxy
+    if ( exists $source_ini{'nozzle_diameter'} ) {
+        my @nozzle_diameters =
+          multivalue_to_array( $source_ini{'nozzle_diameter'} );
+        $nozzle_size = $nozzle_diameters[0];
+    }
+    unless ( defined $nozzle_size ) {
+        my $layer_height = $source_ini{'layer_height'}
+          or die
+          "ERROR: layer_height parameter not found. Is $input_file a valid 
+          PrusaSlicer/SuperSlicer profile .ini file?\n";
+        $nozzle_size = 2 * $source_ini{'layer_height'};
     }
 
     # Loop through each parameter in the INI file
