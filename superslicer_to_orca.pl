@@ -1101,17 +1101,19 @@ foreach my $input_file (@expanded_input_files) {
     }
 
    # If nozzle size isn't specified or detected, use twice layer size as a proxy
-    if ( exists $source_ini{'nozzle_diameter'} ) {
-        my @nozzle_diameters =
-          multivalue_to_array( $source_ini{'nozzle_diameter'} );
-        $nozzle_size = $nozzle_diameters[0];
-    }
-    unless ( defined $nozzle_size ) {
-        my $layer_height = $source_ini{'layer_height'}
-          or die
-          "ERROR: layer_height parameter not found. Is $input_file a valid 
+    if ( $ini_type eq 'print' ) {
+        if ( exists $source_ini{'nozzle_diameter'} ) {
+            my @nozzle_diameters =
+              multivalue_to_array( $source_ini{'nozzle_diameter'} );
+            $nozzle_size = $nozzle_diameters[0];
+        }
+        unless ( defined $nozzle_size ) {
+            my $layer_height = $source_ini{'layer_height'}
+              or die
+              "ERROR: layer_height parameter not found. Is $input_file a valid 
           PrusaSlicer/SuperSlicer profile .ini file?\n";
-        $nozzle_size = 2 * $source_ini{'layer_height'};
+            $nozzle_size = 2 * $source_ini{'layer_height'};
+        }
     }
 
     # Loop through each parameter in the INI file
