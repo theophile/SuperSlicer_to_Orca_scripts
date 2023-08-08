@@ -29,6 +29,9 @@ Options:
                           but PrusaSlicer and SuperSlicer print profiles do not store the nozzle size.
                           If this is not specified, the script will use twice the layer height as a proxy
                           for the nozzle width. (Optional)
+    --physical-printer    Specifies the INI file for the corresponding "physical printer" when converting
+                          printer config files. If this option is not used, the converted OrcaSlicer
+                          "machine" configuration may lack network-configuration data. (Optional) 
     -h, --help            Displays this usage information.
 
 END_USAGE
@@ -41,15 +44,17 @@ END_USAGE
 my @input_files;
 my $output_directory;
 my $nozzle_size;
+my $physical_printer;
 my $overwrite;
 
 # Parse command-line options
 GetOptions(
-    "input=s@"    => \@input_files,
-    "outdir=s"    => \$output_directory,
-    "overwrite"   => \$overwrite,
-    "nozzle-size" => \$nozzle_size,
-    "h|help"      => sub { print_usage_and_exit(); },
+    "input=s@"         => \@input_files,
+    "outdir=s"         => \$output_directory,
+    "overwrite"        => \$overwrite,
+    "nozzle-size"      => \$nozzle_size,
+    "physical-printer" => \$physical_printer,
+    "h|help"           => sub { print_usage_and_exit(); },
 ) or die("Error in command-line arguments.\n");
 
 # Check if required options are provided
@@ -427,6 +432,20 @@ my %parameter_map = (
         thumbnails                       => 'thumbnails',
         template_custom_gcode            => 'template_custom_gcode',
         wipe                             => 'wipe'
+    },
+    'physical_printer' => {
+        host_type                    => 1,
+        preset_name                  => 1,
+        preset_names                 => 1,
+        print_host                   => 1,
+        printer_technology           => 1,
+        printhost_apikey             => 1,
+        printhost_authorization_type => 1,
+        printhost_cafile             => 1,
+        printhost_password           => 1,
+        printhost_port               => 1,
+        printhost_ssl_ignore_revoke  => 1,
+        printhost_user               => 1,
     }
 );
 
@@ -991,6 +1010,25 @@ sub calculate_print_params {
     return %new_hash;
 }
 
+# Subroutine to parse physical printer config if specified
+sub handle_physical_printer {
+    my %printer_hash = ();
+    my %printer_ini  = ini_reader($physical_printer)
+      or die "Error reading $physical_printer: $!";
+    foreach my $parameter ( keys %printer_ini ) {
+
+        # Ignore parameters that Orca Slicer doesn't support
+        next unless exists $parameter_map{'physical_printer'}{$parameter};
+
+        my $new_value = convert_params( $parameter, %printer_ini );
+
+        # Set the translated value in the JSON data
+        $printer_hash{$parameter} = $new_value // "";
+    }
+    return %printer_hash;
+}
+
+
 # Subroutine to parse an .ini file and return a hash with all key/value pairs
 sub ini_reader {
     my ($filename) = @_;
@@ -1106,7 +1144,7 @@ foreach my $input_file (@expanded_input_files) {
         version                    => $ORCA_SLICER_VERSION
     );
 
-    # Add additional filament metadata to the JSON data
+    # Add additional profile-specific metadata to the JSON data
     if ( $ini_type eq 'filament' ) {
         %new_hash = (
             %new_hash,
@@ -1121,6 +1159,9 @@ foreach my $input_file (@expanded_input_files) {
     }
     elsif ( $ini_type eq 'print' ) {
         %new_hash = ( calculate_print_params(%source_ini) );
+    }
+    elsif ( ( $ini_type eq 'printer' ) && ( defined $physical_printer ) ) {
+        %new_hash = ( handle_physical_printer() );
     }
 
     # Construct the output filename
