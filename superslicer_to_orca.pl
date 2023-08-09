@@ -53,7 +53,7 @@ GetOptions(
     "outdir=s"         => \$output_directory,
     "overwrite"        => \$overwrite,
     "nozzle-size"      => \$nozzle_size,
-    "physical-printer" => \$physical_printer,
+    "physical-printer:s" => \$physical_printer,
     "h|help"           => sub { print_usage_and_exit(); },
 ) or die("Error in command-line arguments.\n");
 
@@ -71,6 +71,12 @@ unless ( -d $output_directory ) {
 unless ( -w $output_directory ) {
     die("Output directory $output_directory is not writable.\n");
 }
+
+print @input_files;
+print $output_directory;
+print $nozzle_size;
+print $physical_printer;
+print $overwrite;
 
 # Initialize tracking variables and a hash to store translated data
 my $slicer_flavor = undef;
@@ -163,7 +169,7 @@ sub percent_to_mm {
     }
 
     if ( !is_percent($comp) ) {
-        return $comp * ( remove_percent($subject_param) / 100 );
+        return "" . ($comp * ( remove_percent($subject_param) / 100 ));
     }
 
     return undef;
@@ -451,44 +457,44 @@ my %parameter_map = (
 
 # Printer parameters that may be comma-separated lists
 my %multivalue_params = (
-    max_layer_height                    => 1,
-    min_layer_height                    => 1,
-    deretract_speed                     => 1,
-    machine_max_acceleration_e          => 1,
-    machine_max_acceleration_extruding  => 1,
-    machine_max_acceleration_extruding  => 1,
-    machine_max_acceleration_retracting => 1,
-    machine_max_acceleration_travel     => 1,
-    machine_max_acceleration_x          => 1,
-    machine_max_acceleration_y          => 1,
-    machine_max_acceleration_z          => 1,
-    machine_max_feedrate_e              => 1,
-    machine_max_feedrate_x              => 1,
-    machine_max_feedrate_y              => 1,
-    machine_max_feedrate_z              => 1,
-    machine_max_jerk_e                  => 1,
-    machine_max_jerk_x                  => 1,
-    machine_max_jerk_y                  => 1,
-    machine_max_jerk_z                  => 1,
-    machine_min_extruding_rate          => 1,
-    machine_min_travel_rate             => 1,
-    nozzle_diameter                     => 1,
-    bed_shape                           => 1,
-    retract_before_wipe                 => 1,
-    retract_length_toolchange           => 1,
-    retract_restart_extra_toolchange    => 1,
-    retract_restart_extra               => 1,
-    retract_layer_change                => 1,
-    retract_length                      => 1,
-    retract_lift                        => 1,
-    retract_before_travel               => 1,
-    retract_speed                       => 1,
-    thumbnails                          => 1,
-    extruder_offset                     => 1,
-    retract_lift_above                  => 1,
-    retract_lift_below                  => 1,
-    retract_lift_top                    => 1,
-    wipe                                => 1,
+    max_layer_height                    => 'single',
+    min_layer_height                    => 'single',
+    deretract_speed                     => 'single',
+    machine_max_acceleration_e          => 'array',
+    machine_max_acceleration_extruding  => 'array',
+    machine_max_acceleration_extruding  => 'array',
+    machine_max_acceleration_retracting => 'array',
+    machine_max_acceleration_travel     => 'array',
+    machine_max_acceleration_x          => 'array',
+    machine_max_acceleration_y          => 'array',
+    machine_max_acceleration_z          => 'array',
+    machine_max_feedrate_e              => 'array',
+    machine_max_feedrate_x              => 'array',
+    machine_max_feedrate_y              => 'array',
+    machine_max_feedrate_z              => 'array',
+    machine_max_jerk_e                  => 'array',
+    machine_max_jerk_x                  => 'array',
+    machine_max_jerk_y                  => 'array',
+    machine_max_jerk_z                  => 'array',
+    machine_min_extruding_rate          => 'array',
+    machine_min_travel_rate             => 'array',
+    nozzle_diameter                     => 'single',
+    bed_shape                           => 'array',
+    retract_before_wipe                 => 'single',
+    retract_length_toolchange           => 'single',
+    retract_restart_extra_toolchange    => 'single',
+    retract_restart_extra               => 'single',
+    retract_layer_change                => 'single',
+    retract_length                      => 'single',
+    retract_lift                        => 'single',
+    retract_before_travel               => 'single',
+    retract_speed                       => 'single',
+    thumbnails                          => 'array',
+    extruder_offset                     => 'single',
+    retract_lift_above                  => 'single',
+    retract_lift_below                  => 'single',
+    retract_lift_top                    => 'single',
+    wipe                                => 'single',
 );
 
 # Mapping of SuperSlicer filament types to their Orca Slicer equivalents
@@ -689,6 +695,9 @@ sub convert_params {
     # Some printer parameters need to be converted to arrays
     if ( exists $multivalue_params{$parameter} ) {
         $new_value = [ multivalue_to_array($new_value) ];
+        if ($multivalue_params{$parameter} eq 'single'){
+            $new_value = $new_value->[0];
+        }
     }
 
     # SuperSlicer has a "default_speed" parameter that PrusaSlicer doesn't,
@@ -779,18 +788,10 @@ sub convert_params {
         # Some values may need to be converted from percent of nozzle width to
         # absolute value in mm
         'max_layer_height' => sub {
-            my @new_array;
-            foreach my $value (@$new_value) {
-                push @new_array, percent_to_mm( $nozzle_size, $value );
-            }
-            return \@new_array;
+            return percent_to_mm( $nozzle_size, $new_value )
         },
         'min_layer_height' => sub {
-            my @new_array;
-            foreach my $value (@$new_value) {
-                push @new_array, percent_to_mm( $nozzle_size, $value );
-            }
-            return \@new_array;
+            return percent_to_mm( $nozzle_size, $new_value )
         },
         'fuzzy_skin_point_dist' => sub {
             return percent_to_mm( $nozzle_size, $new_value );
@@ -1013,7 +1014,7 @@ sub calculate_print_params {
 # Subroutine to parse physical printer config if specified
 sub handle_physical_printer {
     my %printer_hash = ();
-    my %printer_ini  = ini_reader($physical_printer)
+    my %printer_ini  = ini_reader(bsd_glob($physical_printer))
       or die "Error reading $physical_printer: $!";
     foreach my $parameter ( keys %printer_ini ) {
 
@@ -1022,6 +1023,8 @@ sub handle_physical_printer {
 
         my $new_value = convert_params( $parameter, %printer_ini );
 
+        next unless defined $new_value;
+        
         # Set the translated value in the JSON data
         $printer_hash{$parameter} = $new_value // "";
     }
@@ -1101,19 +1104,17 @@ foreach my $input_file (@expanded_input_files) {
     }
 
    # If nozzle size isn't specified or detected, use twice layer size as a proxy
-    if ( $ini_type eq 'print' ) {
-        if ( exists $source_ini{'nozzle_diameter'} ) {
-            my @nozzle_diameters =
-              multivalue_to_array( $source_ini{'nozzle_diameter'} );
-            $nozzle_size = $nozzle_diameters[0];
-        }
-        unless ( defined $nozzle_size ) {
-            my $layer_height = $source_ini{'layer_height'}
-              or die
-              "ERROR: layer_height parameter not found. Is $input_file a valid 
+    if ( exists $source_ini{'nozzle_diameter'} ) {
+        my @nozzle_diameters =
+          multivalue_to_array( $source_ini{'nozzle_diameter'} );
+        $nozzle_size = $nozzle_diameters[0];
+    }
+    if ( ( !defined $nozzle_size ) && ( $ini_type eq 'print' ) ) {
+        my $layer_height = $source_ini{'layer_height'}
+          or die
+          "ERROR: layer_height parameter not found. Is $input_file a valid 
           PrusaSlicer/SuperSlicer profile .ini file?\n";
-            $nozzle_size = 2 * $source_ini{'layer_height'};
-        }
+        $nozzle_size = 2 * $source_ini{'layer_height'};
     }
 
     # Loop through each parameter in the INI file
@@ -1163,7 +1164,7 @@ foreach my $input_file (@expanded_input_files) {
         %new_hash = ( calculate_print_params(%source_ini) );
     }
     elsif ( ( $ini_type eq 'printer' ) && ( defined $physical_printer ) ) {
-        %new_hash = ( handle_physical_printer() );
+        %new_hash = ( %new_hash, handle_physical_printer() );
     }
 
     # Construct the output filename
