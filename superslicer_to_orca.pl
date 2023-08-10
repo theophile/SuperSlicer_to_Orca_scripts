@@ -5,7 +5,7 @@ use warnings;
 use Getopt::Long;
 use File::Basename;
 use File::Glob ':glob';
-use File::Spec;
+use Path::Class;
 use String::Escape qw(unbackslash);
 use JSON;
 
@@ -71,12 +71,6 @@ unless ( -d $output_directory ) {
 unless ( -w $output_directory ) {
     die("Output directory $output_directory is not writable.\n");
 }
-
-print @input_files;
-print $output_directory;
-print $nozzle_size;
-print $physical_printer;
-print $overwrite;
 
 # Initialize tracking variables and a hash to store translated data
 my $slicer_flavor = undef;
@@ -1065,15 +1059,16 @@ sub ini_reader {
 my @expanded_input_files;
 foreach my $pattern (@input_files) {
     if ( -d $pattern ) {
-        $pattern = File::Spec->catfile( $pattern, "*.ini" );
+        $pattern = dir($pattern)->file("*.ini");
     }
     push @expanded_input_files, bsd_glob($pattern);
 }
 
 foreach my $input_file (@expanded_input_files) {
 
-    # Extract filename, directory, and extension from the input file
-    my ( $file, $dir, $ext ) = fileparse( $input_file, qr/\.[^.]*/ );
+    # Extract filename and directory from the input file
+    my $dir = file($input_file)->parent;
+    my $file = basename(file($input_file)->basename, ".ini");
 
     # Reset tracking variables and a hashes
     %new_hash = ();
@@ -1168,7 +1163,7 @@ foreach my $input_file (@expanded_input_files) {
     }
 
     # Construct the output filename
-    my $output_file = File::Spec->catfile( $output_directory, $file . ".json" );
+    my $output_file = file($output_directory, "$file.json");
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
