@@ -18,22 +18,31 @@ sub print_usage_and_exit {
 Usage: $0 [options]
 
 Options:
-    --input <PATTERN>     Specifies the input PrusaSlicer or SuperSlicer INI file(s). (Required)
-                          You can use wildcards to specify multiple files.
-    --outdir <DIRECTORY>  Specifies the output directory where the JSON files will be saved. (Required)
-    --overwrite           Allows overwriting existing output files. If not specified, the script will
-                          exit with a warning if the output file already exists.
-    --nozzle-size         For print profiles, specifies the diameter (in mm) of the nozzle the print 
-                          profile is intended to be used with (e.g. --nozzle-size 0.4). This is needed
-                          because some parameters must be calculated by reference to the nozzle size, 
-                          but PrusaSlicer and SuperSlicer print profiles do not store the nozzle size.
-                          If this is not specified, the script will use twice the layer height as a proxy
-                          for the nozzle width. (Optional)
-    --physical-printer    Specifies the INI file for the corresponding "physical printer" when converting
-                          printer config files. If this option is not used, the converted OrcaSlicer
-                          "machine" configuration may lack network-configuration data. (Optional) 
-    -h, --help            Displays this usage information.
+  --input <PATTERN>             Specifies the input PrusaSlicer or SuperSlicer
+                                INI file(s). (Required) You can use wildcards
+                                to specify multiple files.
 
+  --outdir <DIRECTORY>          Specifies the output directory where the JSON
+                                files will be saved. (Required)
+
+  --overwrite                   Allows overwriting existing output files. If
+                                not specified, the script will exit with a
+                                warning if the output file already exists.
+
+  --nozzle-size <DECIMAL>       For print profiles, specifies the diameter (in 
+                                mm) of the nozzle the print profile is
+                                intended to be used with (e.g. --nozzle-size
+                                0.4). If this is not specified, the script will
+                                use twice the layer height as a proxy for the
+                                nozzle width. (Optional)
+
+  --physical-printer <PATTERN>  Specifies the INI file for the corresponding
+                                "physical printer" when converting printer
+                                config files. If this option is not used, the
+                                converted OrcaSlicer "machine" configuration
+                                may lack network-configuration data. (Optional)
+
+  -h, --help                    Displays this usage information.
 END_USAGE
 
     print $usage;
