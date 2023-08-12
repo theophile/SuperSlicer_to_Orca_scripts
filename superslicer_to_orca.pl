@@ -7,6 +7,7 @@ use File::Basename;
 use File::Glob ':glob';
 use Path::Class;
 use String::Escape qw(unbackslash);
+use Term::Choose;
 use JSON;
 
 # Constants
@@ -14,7 +15,7 @@ my $ORCA_SLICER_VERSION = '1.6.0.0';
 
 # Subroutine to print usage instructions and exit
 sub print_usage_and_exit {
-    my $usage = <<"END_USAGE";
+    my $usage = <<'END_USAGE';
 Usage: $0 [options]
 
 Options:
@@ -22,12 +23,11 @@ Options:
                                 INI file(s). (Required) You can use wildcards
                                 to specify multiple files.
 
-  --outdir <DIRECTORY>          Specifies the output directory where the JSON
-                                files will be saved. (Required)
-
-  --overwrite                   Allows overwriting existing output files. If
-                                not specified, the script will exit with a
-                                warning if the output file already exists.
+  --outdir <DIRECTORY>          Specifies the ROOT OrcaSlicer settings directory.
+                                (Required) The typical locations by OS are:      
+                   in Windows:  C:\Users\%USERNAME%\AppData\Roaming\OrcaSlicer
+                     in MacOS:  ~/Library/Application Support/OrcaSlicer
+                     in Linux:  ~/.config/OrcaSlicer
 
   --nozzle-size <DECIMAL>       For print profiles, specifies the diameter (in 
                                 mm) of the nozzle the print profile is
@@ -42,6 +42,17 @@ Options:
                                 converted OrcaSlicer "machine" configuration
                                 may lack network-configuration data. (Optional)
 
+  --overwrite                   Allows overwriting existing output files. If
+                                not specified, the script will exit with a
+                                warning if the output file already exists. 
+                                (Optional)
+
+  --force-output                Forces the script to output the converted JSON
+                                files to the specified output directory. Use this
+                                option if you do not want the new files to be
+                                placed in your OrcaSlicer settings folder.
+                                (Optional)
+
   -h, --help                    Displays this usage information.
 END_USAGE
 
@@ -51,20 +62,26 @@ END_USAGE
 
 # Initialize variables to store command-line options
 my @input_files;
-my $output_directory;
-my $nozzle_size;
-my $physical_printer;
-my $overwrite;
+my ( $output_directory, $nozzle_size, $physical_printer, $overwrite,
+    $force_out );
 
 # Parse command-line options
 GetOptions(
-    "input=s@"         => \@input_files,
-    "outdir=s"         => \$output_directory,
-    "overwrite"        => \$overwrite,
-    "nozzle-size"      => \$nozzle_size,
+    "input=s@"           => \@input_files,
+    "outdir=s"           => \$output_directory,
+    "overwrite"          => \$overwrite,
+    "nozzle-size"        => \$nozzle_size,
     "physical-printer:s" => \$physical_printer,
-    "h|help"           => sub { print_usage_and_exit(); },
+    "force-output"       => \$force_out,
+    "h|help"             => sub { print_usage_and_exit(); },
 ) or die("Error in command-line arguments.\n");
+
+# Mapping of output directories by ini type
+my %output_directories = (
+    'filament' => [ 'user', 'default', 'filament' ],
+    'print'    => [ 'user', 'default', 'process' ],
+    'printer'  => [ 'user', 'default', 'machine' ]
+);
 
 # Check if required options are provided
 if ( !@input_files || !$output_directory ) {
@@ -76,9 +93,20 @@ unless ( -d $output_directory ) {
     die("Output directory $output_directory cannot be found.\n");
 }
 
-# ...and is writable
-unless ( -w $output_directory ) {
-    die("Output directory $output_directory is not writable.\n");
+# ...and looks like an OrcaSlicer root directory...
+foreach my $type ( keys %output_directories ) {
+    my $subdir = dir( $output_directory, @{ $output_directories{$type} } );
+    unless ( -d $subdir ) {
+        die( "\nOutput directory $subdir cannot be found.\nAre you sure that "
+              . "$output_directory is the correct ROOT directory of your OrcaSlicer "
+              . "installation?\n(Run this script with the -h flag for more info.)\n"
+        );
+    }
+
+    # ...and is writable
+    unless ( -w $subdir ) {
+        die("Output directory $subdir is not writable.\n");
+    }
 }
 
 # Initialize tracking variables and a hash to store translated data
@@ -1016,8 +1044,44 @@ sub calculate_print_params {
 
 # Subroutine to parse physical printer config if specified
 sub handle_physical_printer {
+    my ($input_file) = @_;
+    my $sys_dir = dir( $output_directory, 'system' );
+    my %unique_names;
+    foreach my $file ( $sys_dir->children ) {
+        next unless -f $file && $file->basename =~ qr/\.json$/;
+        open my $json_file, '<', $file
+          or die "Could not open JSON file $file: $!";
+        my $json_data = do { local $/; <$json_file> };
+        close $json_file;
+        for my $machine ( @{ decode_json($json_data)->{machine_list} } ) {
+            my $name = $machine->{name};
+            $unique_names{$name} = 1 if $name !~ /common/i;
+        }
+    }
+    my %menu_options = (
+        info => 'In OrcaSlicer, a "machine" profile must be associated with a '
+          . 'printer selected and configured from the available system presets. '
+          . 'Below is a list of the configured printers that '
+          . 'have been detected on your system.' . "\n\n"
+          . 'If you do not see the printer you wish to associate with this '
+          . 'profile, choose <QUIT> to exit this script, configure your desired '
+          . 'printer in OrcaSlicer, and then run this script again. '
+          . 'Alternatively, you may select <NONE> to proceed without associating '
+          . 'this "machine" profile with a configured printer, but network '
+          . "configuration and g-code upload will not be available.\n",
+        prompt => 'Please choose an OrcaSlicer printer to '
+          . "associate with $input_file:\n",
+        clear_screen => 1,
+        layout       => 2
+    );
+    my @menu_items = ( keys %unique_names, '<NONE>', '<QUIT>' );
+    my $choice     = Term::Choose::choose( \@menu_items, \%menu_options );
+
+    exit         if $choice eq '<QUIT>';
+    $choice = '' if $choice eq '<NONE>';
+
     my %printer_hash = ();
-    my %printer_ini  = ini_reader(bsd_glob($physical_printer))
+    my %printer_ini  = ini_reader( bsd_glob($physical_printer) )
       or die "Error reading $physical_printer: $!";
     foreach my $parameter ( keys %printer_ini ) {
 
@@ -1026,11 +1090,12 @@ sub handle_physical_printer {
 
         my $new_value = convert_params( $parameter, %printer_ini );
 
-        next unless defined $new_value;
-        
+        next if $new_value eq "";
+
         # Set the translated value in the JSON data
         $printer_hash{$parameter} = $new_value // "";
     }
+    $printer_hash{'inherits'} = $choice;
     return %printer_hash;
 }
 
@@ -1102,8 +1167,8 @@ foreach my $input_file (@expanded_input_files) {
 
     $ini_type = detect_ini_type(%source_ini);
     if ( !defined $ini_type ) {
-        print
-"Skipping $input_file because it does not appear to be a supported config file!\n";
+        print "Skipping $input_file because it does not appear "
+          . "to be a supported config file!\n";
         next;
     }
 
@@ -1168,11 +1233,18 @@ foreach my $input_file (@expanded_input_files) {
         %new_hash = ( calculate_print_params(%source_ini) );
     }
     elsif ( ( $ini_type eq 'printer' ) && ( defined $physical_printer ) ) {
-        %new_hash = ( %new_hash, handle_physical_printer() );
+        %new_hash = ( %new_hash, handle_physical_printer($file) );
     }
 
     # Construct the output filename
-    my $output_file = file($output_directory, "$file.json");
+    my $subdir = dir( $output_directory, @{ $output_directories{$ini_type} } );
+    unless ( -d $subdir ) {
+        die(    "\nOutput directory $subdir cannot be found. Are you sure that "
+              . "$output_directory is the correct ROOT directory of your OrcaSlicer "
+              . "installation? (Run this script with the -h flag for more info.)\n"
+        );
+    }
+    my $output_file = file( $subdir, "$file.json" );
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
@@ -1187,6 +1259,6 @@ foreach my $input_file (@expanded_input_files) {
     print $fh $json;
     close $fh;
 
-    print
-"\nTranslated '$input_file', a $ini_type config file generated by $slicer_flavor, to '$output_file'.\n";
+    print "\nTranslated '$input_file', a $ini_type config file generated by "
+      . "$slicer_flavor, to '$output_file'.\n";
 }

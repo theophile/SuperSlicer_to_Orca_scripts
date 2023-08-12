@@ -55,8 +55,9 @@ When I learned about OrcaSlicer I wanted to check it out but put it off because 
   - Getopt::Long
   - File::Basename
   - File::Glob
-  - File::Spec
+  - Path::Class
   - String::Escape
+  - Term::Choose
   - JSON
 
 ## Installation
@@ -72,7 +73,7 @@ When I learned about OrcaSlicer I wanted to check it out but put it off because 
 2. Install the required Perl modules using CPAN or your system's package manager. For example, if you're using CPAN:
 
     ```
-    cpan Getopt::Long File::Basename File::Glob File::Spec String::Escape JSON
+    cpan Getopt::Long File::Basename File::Glob Path::Class String::Escape Term::Choose JSON
     ```
 
 3. Clone this repository or download the script directly from GitHub.
