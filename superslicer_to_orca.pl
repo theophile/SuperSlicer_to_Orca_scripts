@@ -110,12 +110,10 @@ foreach my $type ( keys %output_directories ) {
 }
 
 # Initialize tracking variables and a hash to store translated data
-my $slicer_flavor = undef;
-my $ini_type      = undef;
-my %new_hash      = ();
-my $max_temp      = 0;
-my ( $external_perimeters_first, $infill_first ) = undef, undef;
-my ( $ironing,                   $ironing_type ) = undef, undef;
+my %new_hash = ();
+my $max_temp = 0;
+my ( $slicer_flavor, $ini_type, $external_perimeters_first,
+    $infill_first, $ironing, $ironing_type );
 
 # Initialize hash of parameters that will update tracking variables
 my %param_to_var = (
@@ -1050,10 +1048,6 @@ sub handle_physical_printer {
     foreach my $file ( $sys_dir->children ) {
         next unless -f $file && $file->basename =~ qr/\.json$/;
         my $json_data = file($file)->slurp();
-        #open my $json_file, '<', $file
-        #  or die "Could not open JSON file $file: $!";
-        #my $json_data = do { local $/; <$json_file> };
-        #close $json_file;
         for my $machine ( @{ decode_json($json_data)->{machine_list} } ) {
             my $name = $machine->{name};
             $unique_names{$name} = 1 if $name !~ /common/i;
@@ -1136,20 +1130,20 @@ foreach my $pattern (@input_files) {
     }
 }
 
-print @expanded_input_files;
-
 foreach my $input_file (@expanded_input_files) {
 
     # Extract filename and directory from the input file
     my $dir = $input_file->dir;
     my $file = basename($input_file->basename, ".ini");
 
-    # Reset tracking variables and a hashes
+    # Reset tracking variables and hashes
     %new_hash = ();
-    $ini_type = undef;
     $max_temp = 0;
-    ( $external_perimeters_first, $infill_first ) = undef, undef;
-    ( $ironing,                   $ironing_type ) = undef, undef;
+    foreach ( \$ini_type, \$external_perimeters_first, \$infill_first,
+        \$ironing, \$ironing_type )
+    {
+        $$_ //= undef;
+    }
     %param_to_var = (
         'external_perimeters_first' => \$external_perimeters_first,
         'infill_first'              => \$infill_first,
