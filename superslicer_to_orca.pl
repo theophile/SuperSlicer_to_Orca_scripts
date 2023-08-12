@@ -721,6 +721,10 @@ sub convert_params {
     # Get the value of the current parameter from the INI file
     my $new_value = $source_ini{$parameter} // undef;
 
+    # If the SuperSlicer value is 'nil,' skip this parameter and let
+    # Orca Slicer use its own default
+    return undef if $new_value eq 'nil';
+
     # Some printer parameters need to be converted to arrays
     if ( exists $multivalue_params{$parameter} ) {
         $new_value = [ multivalue_to_array($new_value) ];
@@ -757,10 +761,6 @@ sub convert_params {
 
     # Dispatch table for handling special cases
     my %special_cases = (
-
-        # If the SuperSlicer value is 'nil,' skip this parameter and let
-        # Orca Slicer use its own default
-        'nil' => sub { return },
 
         # The custom gcode blocks need to be unquoted and unbackslashed
         # before JSON encoding
