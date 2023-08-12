@@ -1,4 +1,4 @@
-Profile and Configuration Converter (SuperSlicer/PrusaSlicer to OrcaSlicer)
+# Profile and Configuration Converter (SuperSlicer/PrusaSlicer to OrcaSlicer)
 
 This is a Perl script that will convert printer, print, and filament profile settings from PrusaSlicer and SuperSlicer INI files to JSON format for use with OrcaSlicer.
 
