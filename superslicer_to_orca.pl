@@ -723,7 +723,7 @@ sub convert_params {
 
     # If the SuperSlicer value is 'nil,' skip this parameter and let
     # Orca Slicer use its own default
-    return undef if $new_value eq 'nil';
+    return undef if defined $new_value && $new_value eq 'nil';
 
     # Some printer parameters need to be converted to arrays
     if ( exists $multivalue_params{$parameter} ) {
