@@ -1045,6 +1045,27 @@ sub calculate_print_params {
 # Subroutine to parse physical printer config if specified
 sub handle_physical_printer {
     my ($input_file) = @_;
+    my %printer_hash = ();
+    my %printer_ini  = ini_reader( file($physical_printer) )
+      or die "Error reading $physical_printer: $!";
+    foreach my $parameter ( keys %printer_ini ) {
+
+        # Ignore parameters that Orca Slicer doesn't support
+        next unless exists $parameter_map{'physical_printer'}{$parameter};
+
+        my $new_value = convert_params( $parameter, %printer_ini );
+
+        next if $new_value eq "";
+
+        # Set the translated value in the JSON data
+        $printer_hash{$parameter} = $new_value // "";
+    }
+    return %printer_hash;
+}
+
+# Subroutine to link converted "machine" profile to system printer
+sub link_system_printer {
+    my ($input_file) = @_;
     my $sys_dir = dir( $output_directory, 'system' );
     my %unique_names;
     foreach my $file ( $sys_dir->children ) {
@@ -1077,25 +1098,8 @@ sub handle_physical_printer {
     exit         if $choice eq '<QUIT>';
     $choice = '' if $choice eq '<NONE>';
 
-    my %printer_hash = ();
-    my %printer_ini  = ini_reader( file($physical_printer) )
-      or die "Error reading $physical_printer: $!";
-    foreach my $parameter ( keys %printer_ini ) {
-
-        # Ignore parameters that Orca Slicer doesn't support
-        next unless exists $parameter_map{'physical_printer'}{$parameter};
-
-        my $new_value = convert_params( $parameter, %printer_ini );
-
-        next if $new_value eq "";
-
-        # Set the translated value in the JSON data
-        $printer_hash{$parameter} = $new_value // "";
-    }
-    $printer_hash{'inherits'} = $choice;
-    return %printer_hash;
+    return ( 'inherits' => $choice );
 }
-
 
 # Subroutine to parse an .ini file and return a hash with all key/value pairs
 sub ini_reader {
@@ -1236,8 +1240,11 @@ foreach my $input_file (@expanded_input_files) {
     elsif ( $ini_type eq 'print' ) {
         %new_hash = ( calculate_print_params(%source_ini) );
     }
-    elsif ( ( $ini_type eq 'printer' ) && ( defined $physical_printer ) ) {
-        %new_hash = ( %new_hash, handle_physical_printer($file) );
+    elsif ( $ini_type eq 'printer' ) {
+        my %inherits = link_system_printer($file);
+        my %phys_printer_data =
+          ( defined $physical_printer ) ? handle_physical_printer($file) : ();
+        %new_hash = ( %new_hash, %phys_printer_data, %inherits );
     }
 
     my $output_file = file( $subdir, "$file.json" );
