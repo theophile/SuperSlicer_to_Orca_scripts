@@ -5,6 +5,7 @@ use warnings;
 use Getopt::Long;
 use File::Basename;
 use File::Glob ':glob';
+use File::HomeDir;
 use Path::Class;
 use String::Escape qw(unbackslash);
 use Term::Choose;
@@ -67,8 +68,8 @@ my ( $output_directory, $nozzle_size, $physical_printer, $overwrite,
 
 # Parse command-line options
 GetOptions(
-    "input=s@"           => \@input_files,
-    "outdir=s"           => \$output_directory,
+    "input:s@"           => \@input_files,
+    "outdir:s"           => \$output_directory,
     "overwrite"          => \$overwrite,
     "nozzle-size"        => \$nozzle_size,
     "physical-printer:s" => \$physical_printer,
@@ -76,16 +77,33 @@ GetOptions(
     "h|help"             => sub { print_usage_and_exit(); },
 ) or die("Error in command-line arguments.\n");
 
-# Mapping of output directories by ini type
-my %output_directories = (
-    'filament' => [ 'user', 'default', 'filament' ],
-    'print'    => [ 'user', 'default', 'process' ],
-    'printer'  => [ 'user', 'default', 'machine' ]
+# Mapping of system directories by OS and ini type
+my %system_directories = (
+    os => {
+        'linux'   => ['.config'],
+        'MSWin32' => [ 'AppData', 'Roaming' ],
+        'darwin'  => [ 'Library', 'Application Support' ]
+    },
+    input => {
+        'Filament' => 'filament',
+        'Print'    => 'print',
+        'Printer'  => 'printer'
+    },
+    output => {
+        'filament' => [ 'user', 'default', 'filament' ],
+        'print'    => [ 'user', 'default', 'process' ],
+        'printer'  => [ 'user', 'default', 'machine' ]
+    }
 );
 
-# Check if required options are provided
-if ( !@input_files || !$output_directory ) {
-    print_usage_and_exit();
+my $data_dir =
+  dir( File::HomeDir->my_home, @{ $system_directories{'os'}{$^O} } );
+
+my $slicer_dir;
+
+# Set default output directory if not specified
+if ( !$output_directory ) {
+    $output_directory = dir( $data_dir, 'OrcaSlicer' );
 }
 
 # Subroutine to verify output directory before writing
@@ -1046,7 +1064,28 @@ sub calculate_print_params {
 sub handle_physical_printer {
     my ($input_file) = @_;
     my %printer_hash = ();
-    my %printer_ini  = ini_reader( file($physical_printer) )
+
+    if ( !defined $physical_printer ) {
+        my $item_dir = $slicer_dir->subdir('physical_printer');
+        return if ( !-d $item_dir );
+        my @items      = $item_dir->children(qr/\.ini$/);
+        my @item_names = map { basename( $_, '.ini' ) } @items;
+        push @item_names, ( '<NONE>', '<QUIT>' );
+        $physical_printer = display_menu(
+            'In PrusaSlicer and SuperSlicer, most network-configuration '
+              . 'settings are stored in a separate "physical printer" '
+              . '.ini file. Choose one of the detected physical printers '
+              . 'below if you want to include its network settings in '
+              . "$input_file.\n\n",
+            1, @item_names
+        );
+
+        exit   if $physical_printer eq '<QUIT>';
+        return if $physical_printer eq '<NONE>';
+        $physical_printer = file( $item_dir, $physical_printer . '.ini' );
+    }
+
+    my %printer_ini = ini_reader( file($physical_printer) )
       or die "Error reading $physical_printer: $!";
     foreach my $parameter ( keys %printer_ini ) {
 
@@ -1076,8 +1115,10 @@ sub link_system_printer {
             $unique_names{$name} = 1 if $name !~ /common/i;
         }
     }
-    my %menu_options = (
-        info => 'In OrcaSlicer, a "machine" profile must be associated with a '
+    my @sorted_names = sort keys %unique_names;
+    push @sorted_names, ( '<NONE>', '<QUIT>' );
+    my $choice = display_menu(
+        'In OrcaSlicer, a "machine" profile must be associated with a '
           . 'printer selected and configured from the available system presets. '
           . 'Below is a list of the configured printers that '
           . 'have been detected on your system.' . "\n\n"
@@ -1086,14 +1127,10 @@ sub link_system_printer {
           . 'printer in OrcaSlicer, and then run this script again. '
           . 'Alternatively, you may select <NONE> to proceed without associating '
           . 'this "machine" profile with a configured printer, but network '
-          . "configuration and g-code upload will not be available.\n",
-        prompt => 'Please choose an OrcaSlicer printer to '
-          . "associate with $input_file:\n",
-        clear_screen => 1,
-        layout       => 2
+          . "configuration and g-code upload will not be available.\n\n"
+          . "Please choose an OrcaSlicer printer to associate with $input_file:\n",
+        1, @sorted_names
     );
-    my @menu_items = ( keys %unique_names, '<NONE>', '<QUIT>' );
-    my $choice     = Term::Choose::choose( \@menu_items, \%menu_options );
 
     exit         if $choice eq '<QUIT>';
     $choice = '' if $choice eq '<NONE>';
@@ -1119,11 +1156,84 @@ sub ini_reader {
     return %config;
 }
 
+sub get_installed_slicers {
+    return map { $_->basename }
+      grep { /PrusaSlicer|SuperSlicer/ } $data_dir->children;
+}
+
+sub display_menu {
+    my ($prompt, $is_single_option, @options) = @_;
+
+    my %menu_options = (
+        prompt       => $prompt,
+        clear_screen => 1,
+        layout       => 2
+    );
+
+    if ($is_single_option) {
+        my $choice = Term::Choose::choose(\@options, \%menu_options);
+        exit if $choice eq '<QUIT>';
+        return $choice;
+    } else {
+        $menu_options{'layout'} = 1;
+        $menu_options{'include_highlighted'} = 1;
+        my @menu_items = ('<ALL>', @options, '<QUIT>');
+        my @choices = Term::Choose::choose(\@menu_items, \%menu_options);
+        exit if (grep { $_ eq '<QUIT>' } @choices);
+        return @options if grep { $_ eq '<ALL>' } @choices;
+        return @choices;
+    }
+}
+
 ###################
 #                 #
 #    MAIN LOOP    #
 #                 #
 ###################
+
+use strict;
+use warnings;
+use File::HomeDir;
+use File::Spec;
+use File::Basename;
+use Term::Choose;
+
+# Determine what to convert if not specified
+if ( !@input_files ) {
+    my @source_slicers = get_installed_slicers();
+
+    if ( !@source_slicers ) {
+        die(    "No PrusaSlicer or SuperSlicer directories detected in "
+              . "$data_dir.\n\n Please verify the location of the files you "
+              . 'wish to convert and specify them with the --input option '
+              . "if necessary." );
+    }
+
+    my $slicer_choice =
+      display_menu( "Which slicer do you want to import from?\n",
+        1, @source_slicers, '<QUIT>' );
+    exit if $slicer_choice eq '<QUIT>';
+
+    $slicer_dir = $data_dir->subdir($slicer_choice);
+
+    my @config_types = map { ucfirst($_) }
+      grep { -d dir( $slicer_dir->subdir($_) ) } qw(filament print printer);
+    my $config_choice =
+      display_menu( "What kind of profile would you like to import?\n",
+        1, @config_types, '<QUIT>' );
+    exit if $config_choice eq '<QUIT>';
+
+    my $item_dir = $slicer_dir->subdir( lc($config_choice) );
+
+    my @items = $item_dir->children(qr/\.ini$/);
+    my @item_names = map { basename($_, '.ini') } @items;
+    my @choices = display_menu(
+        "Which profile(s) would you like to import?\n\n"
+          . "(Toggle multiple selections with <SPACE>. Press <ENTER> when finished.)\n",
+        0, @item_names);
+    exit if ( grep { $_ eq '<QUIT>' } @choices );
+    push @input_files, map { file( $item_dir, $_ . '.ini' ) } @choices;
+}
 
 # Expand wildcards and process each input file
 my @expanded_input_files;
@@ -1176,7 +1286,8 @@ foreach my $input_file (@expanded_input_files) {
     my $subdir =
       $force_out
       ? dir($output_directory)
-      : dir( $output_directory, @{ $output_directories{$ini_type} } );
+      : dir( $output_directory,
+        @{ $system_directories{'output'}{$ini_type} } );
 
     check_output_directory($subdir);
 
@@ -1242,8 +1353,7 @@ foreach my $input_file (@expanded_input_files) {
     }
     elsif ( $ini_type eq 'printer' ) {
         my %inherits = link_system_printer($file);
-        my %phys_printer_data =
-          ( defined $physical_printer ) ? handle_physical_printer($file) : ();
+        my %phys_printer_data = handle_physical_printer($file);
         %new_hash = ( %new_hash, %phys_printer_data, %inherits );
     }
 
@@ -1251,8 +1361,15 @@ foreach my $input_file (@expanded_input_files) {
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
-        die "Output file '$output_file' already exists.\n"
-          . "Use --overwrite to force overwriting.\n";
+        my @menu_items = ( 'NO', 'YES', 'YES TO ALL', '<QUIT>' );
+        my $choice     = display_menu(
+            "Output file '$output_file' already exists!\n"
+              . "Do you want to overwrite it?\n",
+            1, @menu_items
+        );
+        exit           if $choice eq '<QUIT>';
+        next           if $choice eq 'NO';
+        $overwrite = 1 if ( $choice eq 'YES TO ALL' );
     }
 
     # Write the JSON data to the output file
