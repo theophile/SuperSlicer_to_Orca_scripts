@@ -214,36 +214,20 @@ sub percent_to_float {
 
 # Subroutine to convert percentage value to millimeters
 sub percent_to_mm {
-    my ( $comp, $subject_param ) = @_;
+    my ( $mm_comparator, $percent_param ) = @_;
 
-    if ( defined $subject_param
-        && !is_percent($subject_param) )
-    {
-        return $subject_param;
-    }
-
-    if ( !is_percent($comp) ) {
-        return "" . ($comp * ( remove_percent($subject_param) / 100 ));
-    }
-
-    return undef;
+    return $percent_param if !is_percent($percent_param);
+    return undef          if is_percent($mm_comparator);
+    return "" . ( $mm_comparator * ( remove_percent($percent_param) / 100 ) );
 }
 
 # Subroutine to convert millimeter values to percentage
 sub mm_to_percent {
-    my ( $comp, $subject_param ) = @_;
+    my ( $mm_comparator, $mm_param ) = @_;
 
-    if ( defined $subject_param
-        && is_percent($subject_param) )
-    {
-        return $subject_param;
-    }
-
-    if ( !is_percent($comp) ) {
-        return ( ( $subject_param / $comp ) * 100 );
-    }
-
-    return undef;
+    return $mm_param if is_percent($mm_param);
+    return undef     if is_percent($mm_comparator);
+    return ( ( $mm_param / $mm_comparator ) * 100 );
 }
 
 # Define parameter mappings for translating the source INI settings
