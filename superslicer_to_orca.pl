@@ -860,10 +860,10 @@ sub convert_params {
 
         # Option "0" means "same as top," so set that manually
         'support_material_bottom_contact_distance' => sub {
-            if ( $new_value eq '0' ) {
-                return $source_ini{'support_material_contact_distance'};
-            }
-        },
+            return ( $new_value eq '0' )
+              ? $source_ini{'support_material_contact_distance'}
+              : $new_value;
+          },
 
         # OrcaSlicer consolidates three support-material options to two
         'support_material_style' => sub {
