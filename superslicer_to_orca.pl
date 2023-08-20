@@ -482,8 +482,6 @@ my %parameter_map = (
     },
     'physical_printer' => {
         host_type                    => 1,
-        preset_name                  => 1,
-        preset_names                 => 1,
         print_host                   => 1,
         printer_technology           => 1,
         printhost_apikey             => 1,
