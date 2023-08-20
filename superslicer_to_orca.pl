@@ -209,7 +209,7 @@ sub percent_to_float {
     return $subject_value if ( !is_percent($subject_value) );
 
     my $new_float = remove_percent($subject_value) / 100;
-    return ( $new_float > 2 ) ? '2' : $new_float;
+    return ( $new_float > 2 ) ? '2' : "" . $new_float;
 }
 
 # Subroutine to convert percentage value to millimeters
@@ -804,6 +804,12 @@ sub convert_params {
             return "" . ( $new_value > 0 )
               ? $new_value
               : $default_MVS{ $source_ini{'filament_type'} };
+        },
+
+        'draft_shield' => sub {
+            return "0" if $new_value eq 'disabled';
+            return "1" if $new_value eq 'enabled';
+            return $new_value;
         },
 
         # 'external_perimeter_fan_speed' in SS is the closest equivalent to
