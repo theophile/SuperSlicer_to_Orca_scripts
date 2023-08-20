@@ -1022,6 +1022,8 @@ sub calculate_print_params {
     # percent-based speeds where OrcaSlicer requires absolute values
     foreach my $parameter (@speed_sequence) {
 
+        next if (!exists $source_ini{$parameter});
+
         my $new_value = convert_params( $parameter, %source_ini );
 
         # Limit mm/s values to one decimal place so OrcaSlicer doesn't choke
