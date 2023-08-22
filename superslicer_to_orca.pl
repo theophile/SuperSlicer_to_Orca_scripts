@@ -926,8 +926,7 @@ sub convert_params {
         },
 
         # Interpret empty extrusion_width as zero
-        'extrusion_width' =>
-          sub { return ( $new_value eq "" ) ? '0' : $new_value },
+        'extrusion_width' => sub { return ( $new_value eq "" ) ? '0' : $new_value },
         
         # Convert numerical input to boolean
         'infill_every_layers' => sub { return ( $new_value > 0 ) ? '1' : '0' },
@@ -1364,8 +1363,8 @@ foreach my $input_file (@expanded_input_files) {
                     "Invalid layer height" );
                 next;
             }
+            $nozzle_size = 2 * $source_ini{'layer_height'};
         }
-        $nozzle_size = 2 * $source_ini{'layer_height'};
     }
 
     # Loop through each parameter in the INI file
