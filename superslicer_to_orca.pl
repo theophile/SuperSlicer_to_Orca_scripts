@@ -925,6 +925,10 @@ sub convert_params {
             return defined $new_value ? "" . $new_value : undef;
         },
 
+        # Interpret empty extrusion_width as zero
+        'extrusion_width' =>
+          sub { return ( $new_value eq "" ) ? '0' : $new_value },
+        
         # Convert numerical input to boolean
         'infill_every_layers' => sub { return ( $new_value > 0 ) ? '1' : '0' },
 
