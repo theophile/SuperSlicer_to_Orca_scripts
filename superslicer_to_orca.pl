@@ -227,7 +227,7 @@ sub mm_to_percent {
 
     return $mm_param if is_percent($mm_param);
     return undef     if is_percent($mm_comparator);
-    return ( ( $mm_param / $mm_comparator ) * 100 );
+    return ( ( $mm_param / $mm_comparator ) * 100 ) . "%";
 }
 
 # Define parameter mappings for translating the source INI settings
