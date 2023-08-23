@@ -774,22 +774,18 @@ sub convert_params {
 
         # The custom gcode blocks need to be unquoted and unbackslashed
         # before JSON encoding
-        'start_filament_gcode'  => $unbackslash_gcode,
-        'end_filament_gcode'    => $unbackslash_gcode,
-        'post_process'          => $unbackslash_gcode,
-        'before_layer_gcode'    => $unbackslash_gcode,
-        'toolchange_gcode'      => $unbackslash_gcode,
-        'layer_gcode'           => $unbackslash_gcode,
-        'end_gcode'             => $unbackslash_gcode,
-        'pause_print_gcode'     => $unbackslash_gcode,
-        'start_gcode'           => $unbackslash_gcode,
-        'template_custom_gcode' => $unbackslash_gcode,
-
-        'default_filament_profile' => sub {
-            my @new_array = split( /;/, $new_value );
-            return \@new_array;
-        },
-
+        'start_filament_gcode'     => $unbackslash_gcode,
+        'end_filament_gcode'       => $unbackslash_gcode,
+        'post_process'             => $unbackslash_gcode,
+        'before_layer_gcode'       => $unbackslash_gcode,
+        'toolchange_gcode'         => $unbackslash_gcode,
+        'layer_gcode'              => $unbackslash_gcode,
+        'end_gcode'                => $unbackslash_gcode,
+        'pause_print_gcode'        => $unbackslash_gcode,
+        'start_gcode'              => $unbackslash_gcode,
+        'template_custom_gcode'    => $unbackslash_gcode,
+        'default_filament_profile' => $unbackslash_gcode,
+                
         # Translate filament type to a specific value if it exists in
         # the mapping, otherwise keep the original value
         'filament_type' => sub {
