@@ -133,10 +133,10 @@ sub check_output_directory {
 }
 
 # Initialize tracking variables and a hash to store translated data
-my %new_hash = ();
-my %converted_files= ();
-my $max_temp = 0;
-my ($reset_physical_printer, $reset_nozzle_size) = 0, 0;
+my %new_hash        = ();
+my %converted_files = ();
+my $max_temp        = 0;
+my ( $reset_physical_printer, $reset_nozzle_size ) = 0, 0;
 my ( $slicer_flavor, $ini_type, $external_perimeters_first,
     $infill_first, $ironing, $ironing_type );
 my $iterations_left;
@@ -739,7 +739,7 @@ sub convert_params {
     # Some printer parameters need to be converted to arrays
     if ( exists $multivalue_params{$parameter} ) {
         $new_value = [ multivalue_to_array($new_value) ];
-        if ($multivalue_params{$parameter} eq 'single'){
+        if ( $multivalue_params{$parameter} eq 'single' ) {
             $new_value = $new_value->[0];
         }
     }
@@ -804,7 +804,7 @@ sub convert_params {
         'start_gcode'              => $unbackslash_gcode,
         'template_custom_gcode'    => $unbackslash_gcode,
         'default_filament_profile' => $unbackslash_gcode,
-                
+
         # Translate filament type to a specific value if it exists in
         # the mapping, otherwise keep the original value
         'filament_type' => sub {
@@ -820,9 +820,10 @@ sub convert_params {
         },
 
         'draft_shield' => sub {
-            return "0" if $new_value eq 'disabled';
-            return "1" if $new_value eq 'enabled';
-            return $new_value;
+            return
+                $new_value eq 'disabled' ? "0"
+              : $new_value eq 'enabled'  ? "1"
+              :                            $new_value;
         },
 
         # 'external_perimeter_fan_speed' in SS is the closest equivalent to
@@ -832,10 +833,7 @@ sub convert_params {
         },
 
         # Catch ironing_type and update tracking variable
-        'ironing_type' => sub {
-            $ironing_type = $new_value;
-            return;
-        },
+        'ironing_type' => sub { $ironing_type = $new_value },
 
         'retract_lift_top' => sub {
             my @new_array;
@@ -852,10 +850,10 @@ sub convert_params {
         # Some values may need to be converted from percent of nozzle width to
         # absolute value in mm
         'max_layer_height' => sub {
-            return percent_to_mm( $nozzle_size, $new_value )
+            return percent_to_mm( $nozzle_size, $new_value );
         },
         'min_layer_height' => sub {
-            return percent_to_mm( $nozzle_size, $new_value )
+            return percent_to_mm( $nozzle_size, $new_value );
         },
         'fuzzy_skin_point_dist' => sub {
             return percent_to_mm( $nozzle_size, $new_value );
@@ -880,7 +878,7 @@ sub convert_params {
             return ( $new_value eq '0' )
               ? $source_ini{'support_material_contact_distance'}
               : $new_value;
-          },
+        },
 
         # OrcaSlicer consolidates three support-material options to two
         'support_material_style' => sub {
@@ -945,8 +943,9 @@ sub convert_params {
         },
 
         # Interpret empty extrusion_width as zero
-        'extrusion_width' => sub { return ( $new_value eq "" ) ? '0' : $new_value },
-        
+        'extrusion_width' =>
+          sub { return ( $new_value eq "" ) ? '0' : $new_value },
+
         # Convert numerical input to boolean
         'infill_every_layers' => sub { return ( $new_value > 0 ) ? '1' : '0' },
 
@@ -1042,7 +1041,7 @@ sub calculate_print_params {
     # percent-based speeds where OrcaSlicer requires absolute values
     foreach my $parameter (@speed_sequence) {
 
-        next if (!exists $source_ini{$parameter});
+        next if ( !exists $source_ini{$parameter} );
 
         my $new_value = convert_params( $parameter, undef, %source_ini );
 
@@ -1279,12 +1278,13 @@ if ( !@input_files ) {
 
     my $item_dir = $slicer_dir->subdir( lc($config_choice) );
 
-    my @items = $item_dir->children(qr/\.ini$/);
-    my @item_names = map { basename($_, '.ini') } @items;
-    my @choices = display_menu(
+    my @items      = $item_dir->children(qr/\.ini$/);
+    my @item_names = map { basename( $_, '.ini' ) } @items;
+    my @choices    = display_menu(
         "Which profile(s) would you like to import?\n\n"
           . "(Toggle multiple selections with <SPACE>. Press <ENTER> when finished.)\n",
-        0, @item_names);
+        0, @item_names
+    );
     push @input_files, map { file( $item_dir, $_ . '.ini' ) } @choices;
 }
 
@@ -1304,7 +1304,7 @@ my $total_input_files = scalar @expanded_input_files;
 foreach my $index ( 0 .. $#expanded_input_files ) {
     my $iteration = $index + 1;
     $iterations_left = $total_input_files - $iteration;
-    
+
     # Extract filename and directory from the input file
     my $input_file = $expanded_input_files[$index];
     my $dir        = $input_file->dir;
@@ -1330,7 +1330,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
 
     if ( !defined $slicer_flavor ) {
         log_file_status( $input_file, undef, "Unknown", 0,
-                "Unsupported slicer" );
+            "Unsupported slicer" );
         next;
     }
 
@@ -1338,7 +1338,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     if ( !defined $ini_type ) {
         $ini_type = "unsupported";
         log_file_status( $input_file, undef, $slicer_flavor, 0,
-                "Unsupported file" );
+            "Unsupported file" );
         next;
     }
 
@@ -1346,8 +1346,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     my $subdir =
       $force_out
       ? dir($output_directory)
-      : dir( $output_directory,
-        @{ $system_directories{'output'}{$ini_type} } );
+      : dir( $output_directory, @{ $system_directories{'output'}{$ini_type} } );
 
     check_output_directory($subdir);
 
@@ -1378,7 +1377,8 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
                 "Would you like to use $nozzle_size mm as the "
                   . 'nozzle diameter for ALL remaining print profiles you are '
                   . "importing in this session? Or just for \e[1m$file\e[0m?\n",
-                1, ( 'ALL REMAINING PROFILES', "JUST $file" )
+                1,
+                ( 'ALL REMAINING PROFILES', "JUST $file" )
             );
             $reset_nozzle_size = 1 if ( $choice ne 'ALL REMAINING PROFILES' );
         }
@@ -1441,7 +1441,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         %new_hash = ( calculate_print_params(%source_ini) );
     }
     elsif ( $ini_type eq 'printer' ) {
-        my %inherits = link_system_printer($file);
+        my %inherits          = link_system_printer($file);
         my %phys_printer_data = handle_physical_printer($input_file);
         %new_hash = ( %new_hash, %phys_printer_data, %inherits );
     }
@@ -1449,8 +1449,8 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
         my @menu_items = ( 'NO', 'YES' );
-        push(@menu_items, 'YES TO ALL') if $iterations_left;
-        my $choice     = display_menu(
+        push( @menu_items, 'YES TO ALL' ) if $iterations_left;
+        my $choice = display_menu(
             "Output file '$output_file' already exists!\n"
               . "Do you want to overwrite it?\n",
             1, @menu_items
@@ -1467,9 +1467,10 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     # Write the JSON data to the output file
     $output_file->spew( JSON->new->pretty->canonical->encode( \%new_hash ) );
 
-    log_file_status($input_file, $output_file, $slicer_flavor, 1, undef);
-    ($physical_printer, $reset_physical_printer) = undef, 0 if $reset_physical_printer;
-    ($nozzle_size, $reset_nozzle_size) = undef, 0 if $reset_nozzle_size;
+    log_file_status( $input_file, $output_file, $slicer_flavor, 1, undef );
+    ( $physical_printer, $reset_physical_printer ) = undef, 0
+      if $reset_physical_printer;
+    ( $nozzle_size, $reset_nozzle_size ) = undef, 0 if $reset_nozzle_size;
 }
 
 foreach my $file_type ( keys %converted_files ) {
