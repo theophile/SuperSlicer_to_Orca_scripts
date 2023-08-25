@@ -726,7 +726,7 @@ sub detect_ini_type {
 }
 
 sub convert_params {
-    my ( $parameter, %source_ini ) = @_;
+    my ( $parameter, $file, %source_ini ) = @_;
 
     # Get the value of the current parameter from the INI file
     my $new_value = $source_ini{$parameter} // undef;
@@ -767,6 +767,24 @@ sub convert_params {
         $new_value =~ s/^"(.*)"$/$1/;
         $new_value = [ unbackslash($new_value) ];
         return $new_value;
+    };
+
+    my $handle_compatible_condition = sub {
+        return $new_value if $new_value eq '';
+        my $affected_profile = ( split( '_', $parameter ) )[1];
+        chop $affected_profile;
+        my $choice = display_menu(
+            "The \e[1m$file\e[0m $ini_type profile has the following "
+              . "\e[1m$parameter\e[0m value:\n\n\t\e[40m\e[0;93m$new_value\e[0m\n\n"
+              . "If you keep this value, this $ini_type profile will not be visible "
+              . "in OrcaSlicer unless you have selected a $affected_profile "
+              . 'that satisfies all the conditions specified above. '
+              . "If you discard this value, this $ini_type profile will be visible "
+              . "regardless of which $affected_profile you have selected.\n\n"
+              . "Do you want to KEEP this value or DISCARD it?\n\n",
+            1, ( 'KEEP', 'DISCARD' )
+        );
+        return ( $choice eq 'KEEP' ) ? $new_value : "";
     };
 
     # Dispatch table for handling special cases
@@ -825,6 +843,10 @@ sub convert_params {
             }
             return \@new_array;
         },
+
+        # Give user a choice about "compatible" condition strings
+        'compatible_printers_condition' => $handle_compatible_condition,
+        'compatible_prints_condition'   => $handle_compatible_condition,
 
         # Some values may need to be converted from percent of nozzle width to
         # absolute value in mm
@@ -1021,7 +1043,7 @@ sub calculate_print_params {
 
         next if (!exists $source_ini{$parameter});
 
-        my $new_value = convert_params( $parameter, %source_ini );
+        my $new_value = convert_params( $parameter, undef, %source_ini );
 
         # Limit mm/s values to one decimal place so OrcaSlicer doesn't choke
         if ( is_decimal($new_value) ) {
@@ -1103,7 +1125,7 @@ sub handle_physical_printer {
         # Ignore parameters that Orca Slicer doesn't support
         next unless exists $parameter_map{'physical_printer'}{$parameter};
 
-        my $new_value = convert_params( $parameter, %printer_ini );
+        my $new_value = convert_params( $parameter, $file, %printer_ini );
 
         next if $new_value eq "";
 
@@ -1369,7 +1391,7 @@ foreach my $input_file (@expanded_input_files) {
         # Ignore parameters that Orca Slicer doesn't support
         next unless exists $parameter_map{$ini_type}{$parameter};
 
-        my $new_value = convert_params( $parameter, %source_ini );
+        my $new_value = convert_params( $parameter, $file, %source_ini );
 
         # Move on if we didn't get a usable value. Otherwise, set the translated
         # value in the JSON data
