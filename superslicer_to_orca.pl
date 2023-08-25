@@ -1219,11 +1219,6 @@ sub log_file_status {
     push @{ $converted_files{ ucfirst($ini_type) } }, \%completed_file;
 }
 
-sub get_installed_slicers {
-    return map { $_->basename }
-      grep { /PrusaSlicer|SuperSlicer/ } $data_dir->children;
-}
-
 sub display_menu {
     my ( $prompt, $is_single_option, @options ) = @_;
 
@@ -1260,7 +1255,8 @@ sub display_menu {
 
 # Determine what to convert if not specified
 if ( !@input_files ) {
-    my @source_slicers = get_installed_slicers();
+    my @source_slicers = map { $_->basename }
+      grep { /PrusaSlicer|SuperSlicer/ } $data_dir->children;
 
     if ( !@source_slicers ) {
         die(    "No PrusaSlicer or SuperSlicer directories detected in "
