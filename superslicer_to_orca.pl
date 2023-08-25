@@ -25,7 +25,11 @@ Options:
   --input <PATTERN>             Specifies the input PrusaSlicer or SuperSlicer
                                 INI file(s). Use this option to bypass
                                 the interactive profile selector. You can use 
-                                wildcards to specify multiple files. (Optional)
+                                wildcards to specify multiple files. You may also
+                                pass multiple space-separated arguments to this
+                                option to specify multiple filenames. Any file
+                                path(s) containing a space must be enclosed in
+                                quotes. (Optional)
 
   --outdir <DIRECTORY>          Specifies the ROOT OrcaSlicer settings directory.
                                 (Optional) If this is not specified, the script will
@@ -71,7 +75,7 @@ my ( $output_directory, $nozzle_size, $physical_printer, $overwrite,
 
 # Parse command-line options
 GetOptions(
-    "input:s@"           => \@input_files,
+    "input:s{1,}"        => \@input_files,
     "outdir:s"           => \$output_directory,
     "overwrite"          => \$overwrite,
     "nozzle-size"        => \$nozzle_size,
