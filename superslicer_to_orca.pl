@@ -139,6 +139,7 @@ my $max_temp = 0;
 my ($reset_physical_printer, $reset_nozzle_size) = 0, 0;
 my ( $slicer_flavor, $ini_type, $external_perimeters_first,
     $infill_first, $ironing, $ironing_type );
+my $iterations_left;
 
 # Initialize hash of parameters that will update tracking variables
 my %param_to_var = (
@@ -1083,7 +1084,7 @@ sub calculate_print_params {
 sub handle_physical_printer {
     my ($input_file) = @_;
     my %printer_hash = ();
-    my $file = basename($input_file->basename, ".ini");
+    my $file         = basename( $input_file->basename, ".ini" );
 
     if ( !defined $physical_printer ) {
         $reset_physical_printer = 1;
@@ -1105,13 +1106,19 @@ sub handle_physical_printer {
             return if $physical_printer eq '<NONE>';
             $physical_printer = file( $item_dir, $physical_printer . '.ini' );
 
-            my $choice = display_menu(
-                'Would you like to use ' . $physical_printer->basename . ' as the '
-                  . '"physical printer" for ALL printer profiles you are importing '
-                  . "in this session? Or just for $file?\n\n",
-                1, ('ALL PRINTERS', "JUST $file")
-            );
-            $reset_physical_printer = 0 if ($choice eq "ALL PRINTERS");
+            if ($iterations_left) {
+                my $choice = display_menu(
+                    'Would you like to use '
+                      . $physical_printer->basename
+                      . ' as the "physical printer" for ALL remaining printer '
+                      . 'profiles you are importing '
+                      . "in this session? Or just for $file?\n\n",
+                    1,
+                    ( 'ALL REMAINING PRINTERS', "JUST $file" )
+                );
+                $reset_physical_printer = 0
+                  if ( $choice eq "ALL REMAINING PRINTERS" );
+            }
         }
         else {
             $physical_printer = $input_file;
@@ -1296,11 +1303,16 @@ foreach my $pattern (@input_files) {
     }
 }
 
-foreach my $input_file (@expanded_input_files) {
+my $total_input_files = scalar @expanded_input_files;
 
+foreach my $index ( 0 .. $#expanded_input_files ) {
+    my $iteration = $index + 1;
+    $iterations_left = $total_input_files - $iteration;
+    
     # Extract filename and directory from the input file
-    my $dir  = $input_file->dir;
-    my $file = basename( $input_file->basename, ".ini" );
+    my $input_file = $expanded_input_files[$index];
+    my $dir        = $input_file->dir;
+    my $file       = basename( $input_file->basename, ".ini" );
 
     # Reset tracking variables and hashes
     %new_hash = ();
@@ -1365,14 +1377,15 @@ foreach my $input_file (@expanded_input_files) {
             }
         );
         $nozzle_size =~ s/[^\d.]//g if $nozzle_size;
-        my $choice = display_menu(
-            "Would you like to use $nozzle_size mm as the "
-              . 'nozzle diameter for ALL print profiles you are importing '
-              . "in this session? Or just for \e[1m$file\e[0m?\n",
-            1,
-            ( 'ALL PROFILES', "JUST $file" )
-        );
-        $reset_nozzle_size = 1 if ( $choice ne 'ALL PROFILES' );
+        if ($iterations_left) {
+            my $choice = display_menu(
+                "Would you like to use $nozzle_size mm as the "
+                  . 'nozzle diameter for ALL remaining print profiles you are '
+                  . "importing in this session? Or just for \e[1m$file\e[0m?\n",
+                1, ( 'ALL REMAINING PROFILES', "JUST $file" )
+            );
+            $reset_nozzle_size = 1 if ( $choice ne 'ALL REMAINING PROFILES' );
+        }
 
         if ( !defined $nozzle_size ) {
             my $layer_height = $source_ini{'layer_height'};
@@ -1439,7 +1452,8 @@ foreach my $input_file (@expanded_input_files) {
 
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file && !$overwrite ) {
-        my @menu_items = ( 'NO', 'YES', 'YES TO ALL' );
+        my @menu_items = ( 'NO', 'YES' );
+        push(@menu_items, 'YES TO ALL') if $iterations_left;
         my $choice     = display_menu(
             "Output file '$output_file' already exists!\n"
               . "Do you want to overwrite it?\n",
