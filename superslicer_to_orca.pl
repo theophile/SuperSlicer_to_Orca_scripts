@@ -259,6 +259,7 @@ my %parameter_map = (
         draft_shield                    => 'draft_shield',
         first_layer_size_compensation   => 'elefant_foot_compensation',
         enable_dynamic_overhang_speeds  => 'enable_overhang_speed',
+        extra_perimeters_on_overhangs   => 'extra_perimeters_on_overhangs',
         wipe_tower                      => 'enable_prime_tower',
         ensure_vertical_shell_thickness => 'ensure_vertical_shell_thickness',
         gap_fill_min_length             => 'filter_out_gap_fill',
