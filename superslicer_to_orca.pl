@@ -685,15 +685,16 @@ my %gcode_flavors = (
 
 # Recognized printer host types
 my %host_types = (
-    repetier  => 'repetier',
-    prusalink => 'prusalink',
-    octoprint => 'octoprint',
-    moonraker => 'octoprint',
-    mks       => 'mks',
-    klipper   => 'octoprint',
-    flashair  => 'flashair',
-    duet      => 'duet',
-    astrobox  => 'astrobox',
+    repetier     => 'repetier',
+    prusalink    => 'prusalink',
+    prusaconnect => 'prusaconnect',
+    octoprint    => 'octoprint',
+    moonraker    => 'octoprint',
+    mks          => 'mks',
+    klipper      => 'octoprint',
+    flashair     => 'flashair',
+    duet         => 'duet',
+    astrobox     => 'astrobox',
 );
 
 # Mapping of Z-hop enforcement schemes
