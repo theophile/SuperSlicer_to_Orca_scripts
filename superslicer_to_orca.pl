@@ -519,6 +519,7 @@ my %multivalue_params = (
     max_layer_height                    => 'single',
     min_layer_height                    => 'single',
     deretract_speed                     => 'single',
+    default_filament_profile            => 'single',
     machine_max_acceleration_e          => 'array',
     machine_max_acceleration_extruding  => 'array',
     machine_max_acceleration_extruding  => 'array',
@@ -822,7 +823,6 @@ sub convert_params {
         'pause_print_gcode'        => $unbackslash_gcode,
         'start_gcode'              => $unbackslash_gcode,
         'template_custom_gcode'    => $unbackslash_gcode,
-        'default_filament_profile' => $unbackslash_gcode,
 
         # Translate filament type to a specific value if it exists in
         # the mapping, otherwise keep the original value
@@ -854,6 +854,13 @@ sub convert_params {
         # Catch ironing_type and update tracking variable
         'ironing_type' => sub { $ironing_type = $new_value },
 
+        'default_filament_profile' => sub {
+            my $new_array = [ multivalue_to_array($new_value) ];
+            $new_value = $new_array->[0];
+            $unbackslash_gcode->();
+            return $new_value->[0];
+        },
+        
         'retract_lift_top' => sub {
             my $new_array = [ multivalue_to_array($new_value) ];
             $new_value = $new_array->[0];
