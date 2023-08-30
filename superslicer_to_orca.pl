@@ -174,7 +174,8 @@ sub remove_percent {
 # Helper subroutine to convert comma-separated strings to array of values
 sub multivalue_to_array {
     my ($input_string) = @_;
-    return split( /,/, $input_string );
+    my $delimiter = $input_string =~ /,/ ? ',' : ';';
+    return split( /$delimiter/, $input_string );
 }
 
 # Subroutine to translate the feature print sequence settings
@@ -551,7 +552,6 @@ my %multivalue_params = (
     extruder_offset                     => 'single',
     retract_lift_above                  => 'single',
     retract_lift_below                  => 'single',
-    retract_lift_top                    => 'single',
     wipe                                => 'single',
 );
 
@@ -855,11 +855,10 @@ sub convert_params {
         'ironing_type' => sub { $ironing_type = $new_value },
 
         'retract_lift_top' => sub {
-            my @new_array;
-            foreach my $value (@$new_value) {
-                push @new_array, $zhop_enforcement{$new_value};
-            }
-            return \@new_array;
+            my $new_array = [ multivalue_to_array($new_value) ];
+            $new_value = $new_array->[0];
+            $unbackslash_gcode->();
+            return $zhop_enforcement{$new_value->[0]};
         },
 
         # Give user a choice about "compatible" condition strings
