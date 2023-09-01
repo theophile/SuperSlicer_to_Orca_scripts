@@ -826,6 +826,9 @@ sub convert_params {
         'pause_print_gcode'        => $unbackslash_gcode,
         'start_gcode'              => $unbackslash_gcode,
         'template_custom_gcode'    => $unbackslash_gcode,
+        'notes'                    => $unbackslash_gcode,
+        'filament_notes'           => $unbackslash_gcode,
+        'printer_notes'            => $unbackslash_gcode,
 
         # Translate filament type to a specific value if it exists in
         # the mapping, otherwise keep the original value
@@ -918,7 +921,6 @@ sub convert_params {
               : 'manual';
             $new_hash{'support_type'}  = "${support_type}(${genstyle})";
             $new_hash{'support_style'} = $support_style;
-            return;
         },
 
         # Translate infill types
