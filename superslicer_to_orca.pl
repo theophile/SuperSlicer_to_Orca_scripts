@@ -1226,6 +1226,19 @@ sub ini_reader {
     return %config;
 }
 
+# Subroutine to parse a .json file and return a hash with all key/value pairs
+sub merge_new_parameters {
+    my ($existing_file) = @_;
+    my $existing_json = decode_json( $existing_file->slurp );
+    #foreach my $key ( keys %new_hash ) {
+    #    $existing_json->{$key} = $new_hash{$key}
+    #      unless exists $existing_json->{$key};
+    foreach my $key ( keys %$existing_json ) {
+        $new_hash{$key} = $existing_json->{$key};
+    }
+    #%new_hash = %$existing_json;
+}
+
 sub log_file_status {
     my ( $input_file, $output_file, $slicer_flavor, $success, $error ) = @_;
     my %completed_file = (
@@ -1359,7 +1372,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
       or die "Error reading $input_file: $!";
 
     if ( !defined $slicer_flavor ) {
-        log_file_status( $input_file, undef, "Unknown", 0,
+        log_file_status( $input_file, undef, "Unknown", "NO",
             "Unsupported slicer" );
         next;
     }
@@ -1367,7 +1380,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     $ini_type = detect_ini_type(%source_ini);
     if ( !defined $ini_type ) {
         $ini_type = "unsupported";
-        log_file_status( $input_file, undef, $slicer_flavor, 0,
+        log_file_status( $input_file, undef, $slicer_flavor, "NO",
             "Unsupported file" );
         next;
     }
@@ -1416,7 +1429,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         if ( !defined $nozzle_size ) {
             my $layer_height = $source_ini{'layer_height'};
             if ( !$layer_height ) {
-                log_file_status( $input_file, $output_file, $slicer_flavor, 0,
+                log_file_status( $input_file, $output_file, $slicer_flavor, "NO",
                     "Invalid layer height" );
                 next;
             }
@@ -1477,27 +1490,43 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     }
 
     # Check if the output file already exists and handle overwrite option
+    my $merged;
     if ( -e $output_file && !$overwrite ) {
-        my @menu_items = ( 'NO', 'YES' );
-        push( @menu_items, 'YES TO ALL' ) if $iterations_left;
+        my @menu_items =
+          ( 'LEAVE IT ALONE', 'OVERWRITE', 'MERGE NEW PARAMETERS' );
+        #push( @menu_items, 'YES TO ALL' ) if $iterations_left;
+        my $output_basename = $output_file->basename;
+        $output_basename = "\e[40m\e[0;93m$output_basename\e[0m";
         my $choice = display_menu(
-            "Output file '$output_file' already exists!\n"
-              . "Do you want to overwrite it?\n",
+            "Output file '$output_file' already exists!\n\n"
+              . "If you \e[1mLEAVE IT ALONE\e[0m, the existing file will not "
+              . "be modified and this profile will not be converted.\n\nIf "
+              . "you \e[1mOVERWRITE\e[0m it, $output_basename will be "
+              . "replaced with the contents of this converted profile.\n\nIf "
+              . "you \e[1mMERGE NEW PARAMETERS\e[0m, $output_basename will be "
+              . "amended to add any new key/value pairs from the source .ini "
+              . "that are not already present. Pre-existing key/value pairs in "
+              . "$output_basename will not be altered.\n\n"
+              . "What would you like to do?\n",
             1, @menu_items
         );
 
-        if ( $choice eq 'NO' ) {
-            log_file_status( $input_file, $output_file, $slicer_flavor, 0,
+        if ( $choice eq 'LEAVE IT ALONE' ) {
+            log_file_status( $input_file, $output_file, $slicer_flavor, "NO",
                 "Target file exists" );
             next;
         }
-        $overwrite = 1 if ( $choice eq 'YES TO ALL' );
+        elsif ( $choice eq 'MERGE NEW PARAMETERS' ) {
+            merge_new_parameters($output_file);
+            $merged = 1;
+        }
     }
 
     # Write the JSON data to the output file
     $output_file->spew( JSON->new->pretty->canonical->encode( \%new_hash ) );
 
-    log_file_status( $input_file, $output_file, $slicer_flavor, 1, undef );
+    log_file_status( $input_file, $output_file, $slicer_flavor,
+        ( defined $merged ) ? "MERGED" : "YES", undef );
     ( $physical_printer, $reset_physical_printer ) = undef, 0
       if $reset_physical_printer;
     ( $nozzle_size, $reset_nozzle_size ) = undef, 0 if $reset_nozzle_size;
@@ -1572,9 +1601,8 @@ foreach my $file_type ( keys %converted_files ) {
         push @{ $columns{slicer_col}{content} },
           $converted_file->{slicer_flavor};
         push @{ $columns{item_name_col}{content} }, $item_name;
-        push @{ $columns{converted_col}{content} },
-          $converted_file->{success} ? 'YES' : 'NO';
-        push @{ $columns{error_col}{content} }, $converted_file->{error};
+        push @{ $columns{converted_col}{content} }, $converted_file->{success};
+        push @{ $columns{error_col}{content} },     $converted_file->{error};
         if ( $file_type eq 'Printer' ) {
             my $phys_print_name = $converted_file->{physical_printer_file};
             $phys_print_name_length = length($phys_print_name)
