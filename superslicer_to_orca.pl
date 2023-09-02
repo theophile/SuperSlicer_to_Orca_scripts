@@ -70,19 +70,6 @@ END_USAGE
 
 # Initialize variables to store command-line options
 my @input_files;
-my ( $output_directory, $nozzle_size, $physical_printer, $overwrite,
-    $force_out );
-
-# Parse command-line options
-GetOptions(
-    "input:s{1,}"        => \@input_files,
-    "outdir:s"           => \$output_directory,
-    "overwrite"          => \$overwrite,
-    "nozzle-size"        => \$nozzle_size,
-    "physical-printer:s" => \$physical_printer,
-    "force-output"       => \$force_out,
-    "h|help"             => sub { print_usage_and_exit(); },
-) or die("Error in command-line arguments.\n");
 
 # Mapping of system directories by OS and ini type
 my %system_directories = (
@@ -103,26 +90,72 @@ my %system_directories = (
     }
 );
 
-my $data_dir =
-  dir( File::HomeDir->my_home, @{ $system_directories{'os'}{$^O} } );
+my %status = (
+    force_out       => 0,
+    max_temp        => 0,
+    slicer_flavor   => undef,
+    ini_type        => undef,
+    ironing_type    => undef,
+    iterations_left => undef,
 
-my $slicer_dir;
+    dirs            => {
+        output => undef,
+        data   =>
+          dir( File::HomeDir->my_home, @{ $system_directories{'os'}{$^O} } ),
+        slicer => undef,
+    },
+
+    to_var => {
+        external_perimeters_first => undef,
+        infill_first              => undef,
+        ironing                   => undef,
+    },
+
+    reset => {
+        on_existing                   => 0,
+        physical_printer              => 0,
+        nozzle_size                   => 0,
+        inherits                      => 0,
+        compatible_printers_condition => 0,
+        compatible_prints_condition   => 0
+    },
+
+      value => {
+        on_existing                   => undef,
+        physical_printer              => undef,
+        nozzle_size                   => undef,
+        inherits                      => undef,
+        compatible_printers_condition => undef,
+        compatible_prints_condition   => undef
+    }
+);
+
+# Parse command-line options
+GetOptions(
+    "input:s{1,}"        => \@input_files,
+    "outdir:s"           => \$status{dirs}{output},
+    "overwrite"          => \$status{value}{overwrite},
+    "nozzle-size"        => \$status{value}{nozzle_size},
+    "physical-printer:s" => \$status{value}{physical_printer},
+    "force-output"       => \$status{force_out},
+    "h|help"             => sub { print_usage_and_exit(); },
+) or die("Error in command-line arguments.\n");
 
 # Set default output directory if not specified
-if ( !$output_directory ) {
-    $output_directory = dir( $data_dir, 'OrcaSlicer' );
+if ( !$status{dirs}{output} ) {
+    $status{dirs}{output} = dir( $status{dirs}{data}, 'OrcaSlicer' );
 }
 
 # Subroutine to verify output directory before writing
 sub check_output_directory {
     my ($directory) = @_;
     my $die_msg = "\nOutput directory $directory cannot be found.\n";
-    unless ($force_out) {
+    unless ($status{force_out}) {
         $die_msg =
             $die_msg
-          . "Are you sure that $output_directory is the correct ROOT directory "
-          . "of your OrcaSlicer installation?\n(Run this script with the -h "
-          . "flag for more info.\n";
+          . "Are you sure that " . $status{dirs}{output} . " is the correct "
+          . "ROOT directory of your OrcaSlicer installation?\n(Run this "
+          . "script with the -h flag for more info.\n";
     }
 
     # Check if the output directory exists...
@@ -139,18 +172,6 @@ sub check_output_directory {
 # Initialize tracking variables and a hash to store translated data
 my %new_hash        = ();
 my %converted_files = ();
-my $max_temp        = 0;
-my ( $reset_physical_printer, $reset_nozzle_size ) = 0, 0;
-my ( $slicer_flavor, $ini_type, $external_perimeters_first,
-    $infill_first, $ironing, $ironing_type );
-my $iterations_left;
-
-# Initialize hash of parameters that will update tracking variables
-my %param_to_var = (
-    'external_perimeters_first' => \$external_perimeters_first,
-    'infill_first'              => \$infill_first,
-    'ironing'                   => \$ironing,
-);
 
 # Helper subroutine to check if a value is a decimal
 sub is_decimal {
@@ -770,20 +791,20 @@ sub convert_params {
     # SuperSlicer has a "default_speed" parameter that PrusaSlicer doesn't,
     # and a lot of percentages are based on that default
     my $default_speed = $source_ini{'default_speed'}
-      if ( $slicer_flavor eq 'SuperSlicer' );
+      if ( $status{slicer_flavor} eq 'SuperSlicer' );
 
     # Check if the parameter maps to multiple keys in the JSON data
-    if ( ref( $parameter_map{$ini_type}{$parameter} ) eq 'ARRAY' ) {
+    if ( ref( $parameter_map{$status{ini_type}}{$parameter} ) eq 'ARRAY' ) {
 
         # If yes, set the same value for each key in the JSON data
         $new_hash{$_} = $new_value
-          for @{ $parameter_map{$ini_type}{$parameter} };
+          for @{ $parameter_map{$status{ini_type}}{$parameter} };
         return;
     }
 
     # Track state of combination settings
-    if ( exists $param_to_var{$parameter} ) {
-        ${ $param_to_var{$parameter} } = $new_value ? 1 : 0;
+    if ( exists $status{to_var}{$parameter} ) {
+        ${ $status{to_var}{$parameter} } = $new_value ? 1 : 0;
         return;
     }
 
@@ -794,21 +815,28 @@ sub convert_params {
     };
 
     my $handle_compatible_condition = sub {
-        return $new_value if $new_value eq '';
+        $new_value = ''
+          if ( ( defined $status{value}{$parameter} )
+            && ( $status{value}{$parameter} eq 'DISCARD' ) );
+        return $new_value
+          if ( ( $new_value eq '' )
+            || ( $status{value}{$parameter} eq 'KEEP' ) );
         my $affected_profile = ( split( '_', $parameter ) )[1];
         chop $affected_profile;
-        my $choice = display_menu(
-            "The \e[1m$file\e[0m $ini_type profile has the following "
-              . "\e[1m$parameter\e[0m value:\n\n\t\e[40m\e[0;93m$new_value\e[0m\n\n"
-              . "If you keep this value, this $ini_type profile will not be visible "
-              . "in OrcaSlicer unless you have selected a $affected_profile "
-              . 'that satisfies all the conditions specified above. '
-              . "If you discard this value, this $ini_type profile will be visible "
-              . "regardless of which $affected_profile you have selected.\n\n"
-              . "Do you want to KEEP this value or DISCARD it?\n\n",
-            1, ( 'KEEP', 'DISCARD' )
+        $status{value}{$parameter} = display_menu(
+            "The \e[1m$file\e[0m " . $status{ini_type} . " profile has the "
+              . "following \e[1m$parameter\e[0m value:\n\n\t\e[40m\e[0;93m"
+              . "$new_value\e[0m\n\nIf you keep this value, this "
+              . $status{ini_type} . " profile will not be visible in "
+              . "OrcaSlicer unless you have selected a $affected_profile that "
+              . "satisfies all the conditions specified above. If you discard "
+              . "this value, this " . $status{ini_type} . " profile will be "
+              . "visible regardless of which $affected_profile you have "
+              . "selected.\n\nDo you want to KEEP this value or DISCARD it?\n\n",
+            1,
+            ( 'KEEP', 'DISCARD' )
         );
-        return ( $choice eq 'KEEP' ) ? $new_value : "";
+        ask_yes_to_all( $parameter, $file );
     };
 
     # Dispatch table for handling special cases
@@ -858,7 +886,7 @@ sub convert_params {
         },
 
         # Catch ironing_type and update tracking variable
-        'ironing_type' => sub { $ironing_type = $new_value },
+        'ironing_type' => sub { $status{ironing_type} = $new_value },
 
         'default_filament_profile' => sub {
             my $new_array = [ multivalue_to_array($new_value) ];
@@ -881,28 +909,34 @@ sub convert_params {
         # Some values may need to be converted from percent of nozzle width to
         # absolute value in mm
         'max_layer_height' => sub {
-            return percent_to_mm( $nozzle_size, $new_value );
-        },
-        'min_layer_height' => sub {
-            return percent_to_mm( $nozzle_size, $new_value );
-        },
-        'fuzzy_skin_point_dist' => sub {
-            return percent_to_mm( $nozzle_size, $new_value );
-        },
-        'fuzzy_skin_thickness' => sub {
-            return percent_to_mm( $nozzle_size, $new_value );
-        },
-        'small_perimeter_min_length' => sub {
-            return percent_to_mm( $nozzle_size, $new_value );
-        },
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'min_layer_height' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'fuzzy_skin_point_dist' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'fuzzy_skin_thickness' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'small_perimeter_min_length' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
 
         # Convert percents to float, capping at 2 as OrcaSlicer expects
         'bridge_flow_ratio'   => sub { return percent_to_float($new_value) },
         'fill_top_flow_ratio' => sub { return percent_to_float($new_value) },
 
         'wall_transition_length' => sub {
-            return mm_to_percent( $nozzle_size, $new_value );
-        },
+            return mm_to_percent( $status{value}{nozzle_size},
+                $new_value );
+          },
 
         # Option "0" means "same as top," so set that manually
         'support_material_bottom_contact_distance' => sub {
@@ -967,10 +1001,11 @@ sub convert_params {
               percent_to_mm( $source_ini{'external_perimeter_extrusion_width'},
                 $new_value );
             if ( !defined ) {
-                $new_value = percent_to_mm( $nozzle_size, $new_value );
+                $new_value = percent_to_mm( $status{value}{nozzle_size},
+                    $new_value );
             }
             return defined $new_value ? "" . $new_value : undef;
-        },
+          },
 
         # Interpret empty extrusion_width as zero
         'extrusion_width' =>
@@ -1003,7 +1038,7 @@ sub convert_params {
 
         'first_layer_infill_speed' => sub {
             return percent_to_mm( $source_ini{'infill_speed'},
-                ( $slicer_flavor eq 'PrusaSlicer' )
+                ( $status{slicer_flavor} eq 'PrusaSlicer' )
                 ? $source_ini{'first_layer_speed'}
                 : $new_value );
         },
@@ -1011,7 +1046,7 @@ sub convert_params {
         # PrusaSlicer calculates solid infill speed as a percentage of sparse
         'solid_infill_speed' => sub {
             return percent_to_mm(
-                ( $slicer_flavor eq 'PrusaSlicer' )
+                ( $status{slicer_flavor} eq 'PrusaSlicer' )
                 ? $source_ini{'infill_speed'}
                 : $default_speed,
                 $new_value
@@ -1019,38 +1054,38 @@ sub convert_params {
         },
 
         'perimeter_speed' => sub {
-            return ( $slicer_flavor eq 'SuperSlicer' )
+            return ( $status{slicer_flavor} eq 'SuperSlicer' )
               ? percent_to_mm( $default_speed, $new_value )
               : $new_value;
         },
 
         'support_material_speed' => sub {
-            return ( $slicer_flavor eq 'SuperSlicer' )
+            return ( $status{slicer_flavor} eq 'SuperSlicer' )
               ? percent_to_mm( $default_speed, $new_value )
               : $new_value;
         },
 
         'bridge_speed' => sub {
-            return ( $slicer_flavor eq 'SuperSlicer' )
+            return ( $status{slicer_flavor} eq 'SuperSlicer' )
               ? percent_to_mm( $default_speed, $new_value )
               : $new_value;
         },
 
         'infill_speed' => sub {
-            return ( $slicer_flavor eq 'SuperSlicer' )
+            return ( $status{slicer_flavor} eq 'SuperSlicer' )
               ? percent_to_mm( $new_hash{'internal_solid_infill_speed'},
                 $new_value )
               : $new_value;
         },
 
         'small_perimeter_speed' => sub {
-            return ( $slicer_flavor eq 'SuperSlicer' )
+            return ( $status{slicer_flavor} eq 'SuperSlicer' )
               ? percent_to_mm( $new_hash{'sparse_infill_speed'}, $new_value )
               : $new_value;
         },
 
         'gap_fill_speed' => sub {
-            return ( $slicer_flavor eq 'SuperSlicer' )
+            return ( $status{slicer_flavor} eq 'SuperSlicer' )
               ? percent_to_mm( $new_hash{'sparse_infill_speed'}, $new_value )
               : $new_value;
         },
@@ -1100,11 +1135,12 @@ sub calculate_print_params {
 
     # Set the wall infill order string based on the tracked sequence options
     $new_hash{'wall_infill_order'} =
-      evaluate_print_order( $external_perimeters_first, $infill_first );
+      evaluate_print_order( $status{to_var}{external_perimeters_first},
+        $status{to_var}{infill_first} );
 
     # Set the ironing type based on the tracked options
     $new_hash{'ironing_type'} =
-      evaluate_ironing_type( $ironing, $ironing_type );
+      evaluate_ironing_type( $status{to_var}{ironing}, $status{ironing_type} );
 
     return %new_hash;
 }
@@ -1115,14 +1151,13 @@ sub handle_physical_printer {
     my %printer_hash = ();
     my $file         = basename( $input_file->basename, ".ini" );
 
-    if ( !defined $physical_printer ) {
-        $reset_physical_printer = 1;
-        if ( -d $slicer_dir->subdir('physical_printer') ) {
-            my $item_dir   = $slicer_dir->subdir('physical_printer');
+    if ( !defined $status{value}{physical_printer} ) {
+        if ( -d $status{dirs}{slicer}->subdir('physical_printer') ) {
+            my $item_dir   = $status{dirs}{slicer}->subdir('physical_printer');
             my @items      = $item_dir->children(qr/\.ini$/);
             my @item_names = map { basename( $_, '.ini' ) } @items;
             push @item_names, '<NONE>';
-            $physical_printer = display_menu(
+            $status{value}{physical_printer} = display_menu(
                 'In SuperSlicer and some versions of PrusaSlicer, most network-'
                   . 'configuration settings are stored in a separate "physical '
                   . 'printer" .ini file. Choose one of the detected physical '
@@ -1131,31 +1166,25 @@ sub handle_physical_printer {
                 1, @item_names
             );
 
-            exit   if $physical_printer eq '<QUIT>';
-            return if $physical_printer eq '<NONE>';
-            $physical_printer = file( $item_dir, $physical_printer . '.ini' );
+            exit if $status{value}{physical_printer} eq '<QUIT>';
 
-            if ($iterations_left) {
-                my $choice = display_menu(
-                    'Would you like to use '
-                      . $physical_printer->basename
-                      . ' as the "physical printer" for ALL remaining printer '
-                      . 'profiles you are importing '
-                      . "in this session? Or just for $file?\n\n",
-                    1,
-                    ( 'ALL REMAINING PRINTERS', "JUST $file" )
-                );
-                $reset_physical_printer = 0
-                  if ( $choice eq "ALL REMAINING PRINTERS" );
+            unless ( $status{value}{physical_printer} eq '<NONE>' ) {
+                $status{value}{physical_printer} =
+                  file( $item_dir, $status{value}{physical_printer} . '.ini' );
             }
+            
+            ask_yes_to_all( 'physical_printer', $file );
+
         }
         else {
-            $physical_printer = $input_file;
+            $status{value}{physical_printer} = $input_file;
         }
     }
 
-    my %printer_ini = ini_reader( file($physical_printer) )
-      or die "Error reading $physical_printer: $!";
+    return if $status{value}{physical_printer} eq '<NONE>';
+
+    my %printer_ini = ini_reader( file($status{value}{physical_printer}) )
+      or die "Error reading " . $status{value}{physical_printer} . ": $!";
     foreach my $parameter ( keys %printer_ini ) {
 
         # Ignore parameters that Orca Slicer doesn't support
@@ -1173,8 +1202,11 @@ sub handle_physical_printer {
 
 # Subroutine to link converted "machine" profile to system printer
 sub link_system_printer {
+    if (defined $status{value}{inherits} ) {
+        return ( 'inherits' => $status{value}{inherits} )
+    }
     my ($input_file) = @_;
-    my $sys_dir = dir( $output_directory, 'system' );
+    my $sys_dir = dir( $status{dirs}{output}, 'system' );
     my %unique_names;
     foreach my $file ( $sys_dir->children ) {
         next unless -f $file && $file->basename =~ qr/\.json$/;
@@ -1185,8 +1217,8 @@ sub link_system_printer {
         }
     }
     my @sorted_names = sort keys %unique_names;
-    push @sorted_names, ( '<NONE>', "\e[1;31m<QUIT>\e[0m" );
-    my $choice = display_menu(
+    push @sorted_names, '<NONE>';
+    $status{value}{inherits} = display_menu(
         'In OrcaSlicer, a "machine" profile must be associated with a '
           . 'printer selected and configured from the available system presets. '
           . 'Below is a list of the configured printers that '
@@ -1201,22 +1233,21 @@ sub link_system_printer {
           . "\e[1m$input_file\e[0m:\n",
         1, @sorted_names
     );
+    ask_yes_to_all('inherits', $input_file);
+    $status{value}{inherits} = '' if ($status{value}{inherits} eq '<NONE>');
 
-    exit         if $choice eq "\e[1;31m<QUIT>\e[0m";
-    $choice = '' if $choice eq '<NONE>';
-
-    return ( 'inherits' => $choice );
+    return ( 'inherits' => $status{value}{inherits} );
 }
 
 # Subroutine to parse an .ini file and return a hash with all key/value pairs
 sub ini_reader {
     my ($file) = @_;
     my %config;
-    $slicer_flavor = undef;
     foreach my $line ( $file->slurp() ) {
 
         # Detect which slicer we're importing from
-        $slicer_flavor = $1 if ( $line =~ /^#\s*generated\s+by\s+(\S+)/i );
+        $status{slicer_flavor} = $1
+          if ( $line =~ /^#\s*generated\s+by\s+(\S+)/i );
 
         next if $line =~ /^\s*(?:#|$)/;    # Skip empty and comment lines
         my ( $key, $value ) =
@@ -1251,14 +1282,27 @@ sub log_file_status {
         error         => $error // ""
     );
 
-    if ( $ini_type eq 'printer' ) {
+    if ( $status{ini_type} eq 'printer' ) {
         $completed_file{'physical_printer_file'} =
-          ( -f $physical_printer ) ? $physical_printer->basename : "None";
+          ( -f $status{value}{physical_printer} )
+          ? $status{value}{physical_printer}->basename
+          : "None";
         $completed_file{'physical_printer_dir'} =
-          ( -f $physical_printer ) ? $physical_printer->dir : "";
+          ( -f $status{value}{physical_printer} )
+          ? $status{value}{physical_printer}->dir
+          : "";
     }
 
-    push @{ $converted_files{ ucfirst($ini_type) } }, \%completed_file;
+    push @{ $converted_files{ ucfirst($status{ini_type}) } }, \%completed_file;
+
+    # This subroutine is always called at the end of the loop, so go ahead
+    # and reset the tracking parameters here
+    foreach my $param ( keys %{ $status{reset} } ) {
+        if ( !!$status{reset}{$param} ) {
+            $status{value}{$param} = undef;
+            $status{reset}{$param} = 0;
+        }
+    }
 }
 
 sub display_menu {
@@ -1289,6 +1333,25 @@ sub display_menu {
     }
 }
 
+sub ask_yes_to_all {
+    my ( $param, $file ) = @_;
+    #die($status{value}{$param});
+    return if !$status{iterations_left};
+    my $choice = display_menu(
+        "You have chosen " . $status{value}{$param} . ". Would you like to "
+          . "apply this choice to ALL remaining profiles you are importing in "
+          . "this session? Or just to \e[1m$file\e[0m?\n",
+        1,
+        ( 'ALL REMAINING PROFILES', "JUST $file" )
+    );
+    $status{reset}{$param} = 1
+      if ( $choice ne 'ALL REMAINING PROFILES' );
+}
+
+sub reset_loop {
+
+}
+
 ###################
 #                 #
 #    MAIN LOOP    #
@@ -1298,28 +1361,29 @@ sub display_menu {
 # Determine what to convert if not specified
 if ( !@input_files ) {
     my @source_slicers = map { $_->basename }
-      grep { /PrusaSlicer|SuperSlicer/ } $data_dir->children;
+      grep { /PrusaSlicer|SuperSlicer/ } $status{dirs}{data}->children;
 
     if ( !@source_slicers ) {
         die(    "No PrusaSlicer or SuperSlicer directories detected in "
-              . "$data_dir.\n\n Please verify the location of the files you "
-              . 'wish to convert and specify them with the --input option '
-              . "if necessary." );
+              . "$status{dirs}{data}.\n\n Please verify the location of "
+              . 'the files you wish to convert and specify them with the '
+              . "--input option if necessary." );
     }
 
     my $slicer_choice =
       display_menu( "Which slicer do you want to import from?\n",
         1, @source_slicers );
 
-    $slicer_dir = $data_dir->subdir($slicer_choice);
+    $status{dirs}{slicer} = $status{dirs}{data}->subdir($slicer_choice);
 
     my @config_types = map { ucfirst($_) }
-      grep { -d dir( $slicer_dir->subdir($_) ) } qw(filament print printer);
+      grep { -d dir( $status{dirs}{slicer}->subdir($_) ) }
+      qw(filament print printer);
     my $config_choice =
       display_menu( "What kind of profile would you like to import?\n",
         1, @config_types );
 
-    my $item_dir = $slicer_dir->subdir( lc($config_choice) );
+    my $item_dir = $status{dirs}{slicer}->subdir( lc($config_choice) );
 
     my @items      = $item_dir->children(qr/\.ini$/);
     my @item_names = map { basename( $_, '.ini' ) } @items;
@@ -1346,7 +1410,7 @@ my $total_input_files = scalar @expanded_input_files;
 
 foreach my $index ( 0 .. $#expanded_input_files ) {
     my $iteration = $index + 1;
-    $iterations_left = $total_input_files - $iteration;
+    $status{iterations_left} = $total_input_files - $iteration;
 
     # Extract filename and directory from the input file
     my $input_file = $expanded_input_files[$index];
@@ -1355,41 +1419,46 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
 
     # Reset tracking variables and hashes
     %new_hash = ();
-    $max_temp = 0;
-    foreach ( \$ini_type, \$external_perimeters_first, \$infill_first,
-        \$ironing, \$ironing_type )
+    $status{max_temp} = 0;
+    foreach (
+        \$status{ini_type},
+        \$status{to_var}{external_perimeters_first},
+        \$status{to_var}{infill_first},
+        \$status{to_var}{ironing},
+        \$status{ironing_type}
+      )
     {
         $$_ //= undef;
     }
-    %param_to_var = (
-        'external_perimeters_first' => \$external_perimeters_first,
-        'infill_first'              => \$infill_first,
-        'ironing'                   => \$ironing,
-    );
+    #%param_to_var = (
+    #    'external_perimeters_first' => \$external_perimeters_first,
+    #    'infill_first'              => \$infill_first,
+    #    'ironing'                   => \$ironing,
+    #);
 
     # Read the input INI file and set source slicer flavor
-    my %source_ini = ini_reader($input_file)
-      or die "Error reading $input_file: $!";
+    my %source_ini = ini_reader($input_file);
 
-    if ( !defined $slicer_flavor ) {
+    if ( !defined $status{slicer_flavor} ) {
         log_file_status( $input_file, undef, "Unknown", "NO",
             "Unsupported slicer" );
         next;
     }
 
-    $ini_type = detect_ini_type(%source_ini);
-    if ( !defined $ini_type ) {
-        $ini_type = "unsupported";
-        log_file_status( $input_file, undef, $slicer_flavor, "NO",
+    $status{ini_type} = detect_ini_type(%source_ini);
+    if ( !defined $status{ini_type} ) {
+        $status{ini_type} = "unsupported";
+        log_file_status( $input_file, undef, $status{slicer_flavor}, "NO",
             "Unsupported file" );
         next;
     }
 
     # Make sure output directory is correct
     my $subdir =
-      $force_out
-      ? dir($output_directory)
-      : dir( $output_directory, @{ $system_directories{'output'}{$ini_type} } );
+      $status{force_out}
+      ? dir($status{dirs}{output})
+      : dir( $status{dirs}{output},
+        @{ $system_directories{'output'}{ $status{ini_type} } } );
 
     check_output_directory($subdir);
 
@@ -1399,11 +1468,12 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     if ( exists $source_ini{'nozzle_diameter'} ) {
         my @nozzle_diameters =
           multivalue_to_array( $source_ini{'nozzle_diameter'} );
-        $nozzle_size = $nozzle_diameters[0];
+        $status{value}{nozzle_size} = $nozzle_diameters[0];
     }
-    if ( ( !defined $nozzle_size ) && ( $ini_type eq 'print' ) ) {
-        my $nozzle_query = Term::Form::ReadLine->new();
-        $nozzle_size = $nozzle_query->readline(
+    if (   ( !defined $status{value}{nozzle_size} )
+        && ( $status{ini_type} eq 'print' ) )
+    {
+        $status{value}{nozzle_size} = Term::Form::ReadLine->new->readline(
             'Nozzle size: ',
             {
                 color            => 1,
@@ -1414,26 +1484,18 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
                 default => ''
             }
         );
-        $nozzle_size =~ s/[^\d.]//g if $nozzle_size;
-        if ($iterations_left) {
-            my $choice = display_menu(
-                "Would you like to use $nozzle_size mm as the "
-                  . 'nozzle diameter for ALL remaining print profiles you are '
-                  . "importing in this session? Or just for \e[1m$file\e[0m?\n",
-                1,
-                ( 'ALL REMAINING PROFILES', "JUST $file" )
-            );
-            $reset_nozzle_size = 1 if ( $choice ne 'ALL REMAINING PROFILES' );
-        }
+        $status{value}{nozzle_size} =~ s/[^\d.]//g
+          if $status{value}{nozzle_size};
+        ask_yes_to_all( 'nozzle_size', $file );
 
-        if ( !defined $nozzle_size ) {
+        if ( !defined $status{value}{nozzle_size} ) {
             my $layer_height = $source_ini{'layer_height'};
             if ( !$layer_height ) {
-                log_file_status( $input_file, $output_file, $slicer_flavor, "NO",
-                    "Invalid layer height" );
+                log_file_status( $input_file, $output_file,
+                    $status{slicer_flavor}, "NO", "Invalid layer height" );
                 next;
             }
-            $nozzle_size = 2 * $source_ini{'layer_height'};
+            $status{value}{nozzle_size} = 2 * $source_ini{'layer_height'};
         }
     }
 
@@ -1441,38 +1503,38 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     foreach my $parameter ( keys %source_ini ) {
 
         # Ignore parameters that Orca Slicer doesn't support
-        next unless exists $parameter_map{$ini_type}{$parameter};
+        next unless exists $parameter_map{$status{ini_type}}{$parameter};
 
         my $new_value = convert_params( $parameter, $file, %source_ini );
 
         # Move on if we didn't get a usable value. Otherwise, set the translated
         # value in the JSON data
         ( defined $new_value )
-          ? $new_hash{ $parameter_map{$ini_type}{$parameter} } = $new_value
+          ? $new_hash{ $parameter_map{$status{ini_type}}{$parameter} } = $new_value
           : next;
 
         # Track the maximum commanded nozzle temperature
-        $max_temp = $new_value
+        $status{max_temp} = $new_value
           if $parameter =~ /^(first_layer_temperature|temperature)$/
-          && $new_value > $max_temp;
+          && $new_value > $status{max_temp};
     }
 
     # Add additional general metadata to the JSON data
     %new_hash = (
         %new_hash,
-        $ini_type . "_settings_id" => $file,
-        name                       => $file,
-        from                       => 'User',
-        is_custom_defined          => '1',
-        version                    => $ORCA_SLICER_VERSION
+        $status{ini_type} . "_settings_id" => $file,
+        name                               => $file,
+        from                               => 'User',
+        is_custom_defined                  => '1',
+        version                            => $ORCA_SLICER_VERSION
     );
 
     # Add additional profile-specific metadata to the JSON data
-    if ( $ini_type eq 'filament' ) {
+    if ( $status{ini_type} eq 'filament' ) {
         %new_hash = (
             %new_hash,
             nozzle_temperature_range_low  => '0',
-            nozzle_temperature_range_high => "" . $max_temp,
+            nozzle_temperature_range_high => "" . $status{max_temp},
             slow_down_for_layer_cooling   => (
                 ( $source_ini{'slowdown_below_layer_time'} > 0 )
                 ? '1'
@@ -1480,198 +1542,211 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
             )
         );
     }
-    elsif ( $ini_type eq 'print' ) {
+    elsif ( $status{ini_type} eq 'print' ) {
         %new_hash = ( calculate_print_params(%source_ini) );
     }
-    elsif ( $ini_type eq 'printer' ) {
+    elsif ( $status{ini_type} eq 'printer' ) {
         my %inherits          = link_system_printer($file);
         my %phys_printer_data = handle_physical_printer($input_file);
         %new_hash = ( %new_hash, %phys_printer_data, %inherits );
     }
 
     # Check if the output file already exists and handle overwrite option
-    my $merged;
-    if ( -e $output_file && !$overwrite ) {
-        my @menu_items =
-          ( 'LEAVE IT ALONE', 'OVERWRITE', 'MERGE NEW PARAMETERS' );
-        #push( @menu_items, 'YES TO ALL' ) if $iterations_left;
-        my $output_basename = $output_file->basename;
-        $output_basename = "\e[40m\e[0;93m$output_basename\e[0m";
-        my $choice = display_menu(
-            "Output file '$output_file' already exists!\n\n"
-              . "If you \e[1mLEAVE IT ALONE\e[0m, the existing file will not "
-              . "be modified and this profile will not be converted.\n\nIf "
-              . "you \e[1mOVERWRITE\e[0m it, $output_basename will be "
-              . "replaced with the contents of this converted profile.\n\nIf "
-              . "you \e[1mMERGE NEW PARAMETERS\e[0m, $output_basename will be "
-              . "amended to add any new key/value pairs from the source .ini "
-              . "that are not already present. Pre-existing key/value pairs in "
-              . "$output_basename will not be altered.\n\n"
-              . "What would you like to do?\n",
-            1, @menu_items
-        );
+    if ( -e $output_file ) {
+        if ( !defined $status{value}{on_existing} ) {
+            my @menu_items =
+              ( 'LEAVE IT ALONE', 'OVERWRITE', 'MERGE NEW PARAMETERS' );
+            my $output_basename =
+              "\e[40m\e[0;93m" . $output_file->basename . "\e[0m";
+            $status{value}{on_existing} = display_menu(
+                "Output file '$output_file' already exists!\n\n"
+                  . "If you \e[1mLEAVE IT ALONE\e[0m, the existing file will not "
+                  . "be modified and this profile will not be converted.\n\nIf "
+                  . "you \e[1mOVERWRITE\e[0m it, $output_basename will be "
+                  . "replaced with the contents of this converted profile.\n\nIf "
+                  . "you \e[1mMERGE NEW PARAMETERS\e[0m, $output_basename will be "
+                  . "amended to add any new key/value pairs from the source .ini "
+                  . "that are not already present. Pre-existing key/value pairs in "
+                  . "$output_basename will not be altered.\n\n"
+                  . "What would you like to do?\n",
+                1, @menu_items
+            );
+            ask_yes_to_all( 'on_existing', $file );
+        }
 
-        if ( $choice eq 'LEAVE IT ALONE' ) {
-            log_file_status( $input_file, $output_file, $slicer_flavor, "NO",
-                "Target file exists" );
+        if ( $status{value}{on_existing} eq 'LEAVE IT ALONE' ) {
+            log_file_status( $input_file, $output_file,
+                $status{slicer_flavor}, "NO", "Target file exists" );
             next;
         }
-        elsif ( $choice eq 'MERGE NEW PARAMETERS' ) {
+        elsif ( $status{value}{on_existing} eq 'MERGE NEW PARAMETERS' ) {
             merge_new_parameters($output_file);
-            $merged = 1;
         }
+
     }
 
     # Write the JSON data to the output file
     $output_file->spew( JSON->new->pretty->canonical->encode( \%new_hash ) );
 
-    log_file_status( $input_file, $output_file, $slicer_flavor,
-        ( defined $merged ) ? "MERGED" : "YES", undef );
-    ( $physical_printer, $reset_physical_printer ) = undef, 0
-      if $reset_physical_printer;
-    ( $nozzle_size, $reset_nozzle_size ) = undef, 0 if $reset_nozzle_size;
+    log_file_status(
+        $input_file,
+        $output_file,
+        $status{slicer_flavor},
+        ( $status{value}{on_existing} eq 'MERGE NEW PARAMETERS' )
+        ? "MERGED"
+        : "YES",
+        undef
+    );
+    
 }
 
-foreach my $file_type ( keys %converted_files ) {
+exit_with_conversion_summary();
 
-    my $max_table_width = 100;
-    my @column_order    = (
-        'slicer_col',       'item_name_col',
-        'phys_printer_col', 'converted_col',
-        'error_col'
-    );
-    my %columns = (
-        slicer_col => {
-            name    => "Source File\nGenerated By",
-            width   => 12,
-            content => []
-        },
-        item_name_col => {
-            name    => "$file_type Profile Name",
-            width   => 40,
-            content => []
-        },
-        phys_printer_col => {
-            name    => "Imported Physical\nPrinter Data",
-            width   => 0,
-            content => []
-        },
-        converted_col => {
-            name    => "Converted?",
-            width   => 10,
-            content => []
-        },
-        error_col => {
-            name    => "Error",
-            width   => 0,
-            content => []
+sub exit_with_conversion_summary {
+    foreach my $file_type ( keys %converted_files ) {
+
+        my $max_table_width = 100;
+        my @column_order    = (
+            'slicer_col',       'item_name_col',
+            'phys_printer_col', 'converted_col',
+            'error_col'
+        );
+        our %columns = (
+            slicer_col => {
+                name    => "Source File\nGenerated By",
+                width   => 12,
+                content => []
+            },
+            item_name_col => {
+                name    => "$file_type Profile Name",
+                width   => 40,
+                content => []
+            },
+            phys_printer_col => {
+                name    => "Imported Physical\nPrinter Data",
+                width   => 0,
+                content => []
+            },
+            converted_col => {
+                name    => "Converted?",
+                width   => 10,
+                content => []
+            },
+            error_col => {
+                name    => "Error",
+                width   => 0,
+                content => []
+            }
+        );
+
+        sub get_table_width {
+            my $total_columns = scalar grep { $_->{width} > 0 } values %columns;
+            my $column_margins          = $total_columns * 2;
+            my $table_borders           = 2;
+            my $borders_between_columns = $total_columns - 1;
+            my $additional_width =
+              $column_margins + $table_borders + $borders_between_columns;
+            my $total_table_width = 0;
+            foreach my $col_info ( values %columns ) {
+                $total_table_width += $col_info->{width};
+            }
+            $total_table_width += $additional_width;
+            return $total_table_width;
         }
-    );
 
-    sub get_table_width {
-        my $total_columns  = scalar grep { $_->{width} > 0 } values %columns;
-        my $column_margins = $total_columns * 2;
-        my $table_borders  = 2;
-        my $borders_between_columns = $total_columns - 1;
-        my $additional_width =
-          $column_margins + $table_borders + $borders_between_columns;
-        my $total_table_width = 0;
-        foreach my $col_info ( values %columns ) {
-            $total_table_width += $col_info->{width};
+        my $input_dir = $converted_files{$file_type}[0]{input_dir};
+        my $output_dir;
+        foreach my $index ( 0 .. $#{ $converted_files{$file_type} } ) {
+            $output_dir = $converted_files{$file_type}[$index]{output_dir};
+            last if $output_dir ne "";
         }
-        $total_table_width += $additional_width;
-        return $total_table_width;
-    }
 
-    my $input_dir = $converted_files{$file_type}[0]{input_dir};
-    my $output_dir;
-    foreach my $index ( 0 .. $#{ $converted_files{$file_type} } ) {
-        $output_dir = $converted_files{$file_type}[$index]{output_dir};
-        last if $output_dir ne "";
-    }
-
-    my $item_name_length       = 0;
-    my $phys_print_name_length = 0;
-    foreach my $converted_file ( @{ $converted_files{$file_type} } ) {
-        my $item_name = basename( $converted_file->{input_file}, ".ini" );
-        $item_name_length = length($item_name)
-          if length($item_name) > $item_name_length;
-        $columns{error_col}{width} = length( $converted_file->{error} )
-          if length( $converted_file->{error} ) > $columns{error_col}{width};
-        push @{ $columns{slicer_col}{content} },
-          $converted_file->{slicer_flavor};
-        push @{ $columns{item_name_col}{content} }, $item_name;
-        push @{ $columns{converted_col}{content} }, $converted_file->{success};
-        push @{ $columns{error_col}{content} },     $converted_file->{error};
-        if ( $file_type eq 'Printer' ) {
-            my $phys_print_name = $converted_file->{physical_printer_file};
-            $phys_print_name_length = length($phys_print_name)
-              if length($phys_print_name) > $phys_print_name_length;
-            push @{ $columns{phys_printer_col}{content} }, $phys_print_name;
-        }
-    }
-
-    # Optimize heading and width of "Profile Name" column
-    $columns{item_name_col}{width} =
-      ( $columns{item_name_col}{width} > $item_name_length )
-      ? $item_name_length
-      : $columns{item_name_col}{width};
-    if ( $item_name_length < length( $columns{item_name_col}{name} ) ) {
-        $columns{item_name_col}{name} = "$file_type Profile\nName";
-        $columns{item_name_col}{width} =
-          ( length( $file_type . " Profile" ) < $item_name_length )
-          ? $item_name_length
-          : length( $file_type . " Profile" );
-    }
-
-    # Add "Physical Printer" column for printer profile conversions
-    if ( $file_type eq 'Printer' ) {
-        $phys_print_name_length =
-          ( $phys_print_name_length < 17 ) ? 17 : $phys_print_name_length;
-        if ( $phys_print_name_length >= 30 ) {
-            $columns{phys_printer_col}{name} = "Imported Physical Printer Data";
-        }
-    }
-
-    my @column_headings = ();
-    my @table_rows      = ();
-    my $total_rows      = 0;
-
-    # Build table columns
-    foreach my $col (@column_order) {
-        if ( $columns{$col}{width} > 0 ) {
-            push @column_headings,
-              [ $columns{$col}{width}, $columns{$col}{name} ];
-            my $content_rows = scalar @{ $columns{$col}{content} };
-            $total_rows = $content_rows if $content_rows > $total_rows;
-        }
-    }
-
-    # Build table rows
-    for my $i ( 0 .. $total_rows - 1 ) {
-        my @row = ();
-        foreach my $col (@column_order) {
-            if ( $columns{$col}{width} > 0 ) {
-                my $content_item = $columns{$col}{content}[$i]
-                  // "";    # Use empty string if content array is shorter
-                push @row, $content_item;
+        my $item_name_length       = 0;
+        my $phys_print_name_length = 0;
+        foreach my $converted_file ( @{ $converted_files{$file_type} } ) {
+            my $item_name = basename( $converted_file->{input_file}, ".ini" );
+            $item_name_length = length($item_name)
+              if length($item_name) > $item_name_length;
+            $columns{error_col}{width} = length( $converted_file->{error} )
+              if length( $converted_file->{error} ) >
+              $columns{error_col}{width};
+            push @{ $columns{slicer_col}{content} },
+              $converted_file->{slicer_flavor};
+            push @{ $columns{item_name_col}{content} }, $item_name;
+            push @{ $columns{converted_col}{content} },
+              $converted_file->{success};
+            push @{ $columns{error_col}{content} }, $converted_file->{error};
+            if ( $file_type eq 'Printer' ) {
+                my $phys_print_name = $converted_file->{physical_printer_file};
+                $phys_print_name_length = length($phys_print_name)
+                  if length($phys_print_name) > $phys_print_name_length;
+                push @{ $columns{phys_printer_col}{content} }, $phys_print_name;
             }
         }
-        push @table_rows, \@row;
+
+        # Optimize heading and width of "Profile Name" column
+        $columns{item_name_col}{width} =
+          ( $columns{item_name_col}{width} > $item_name_length )
+          ? $item_name_length
+          : $columns{item_name_col}{width};
+        if ( $item_name_length < length( $columns{item_name_col}{name} ) ) {
+            $columns{item_name_col}{name} = "$file_type Profile\nName";
+            $columns{item_name_col}{width} =
+              ( length( $file_type . " Profile" ) < $item_name_length )
+              ? $item_name_length
+              : length( $file_type . " Profile" );
+        }
+
+        # Add "Physical Printer" column for printer profile conversions
+        if ( $file_type eq 'Printer' ) {
+            $phys_print_name_length =
+              ( $phys_print_name_length < 17 ) ? 17 : $phys_print_name_length;
+            if ( $phys_print_name_length >= 30 ) {
+                $columns{phys_printer_col}{name} =
+                  "Imported Physical Printer Data";
+            }
+        }
+
+        my @column_headings = ();
+        my @table_rows      = ();
+        my $total_rows      = 0;
+
+        # Build table columns
+        foreach my $col (@column_order) {
+            if ( $columns{$col}{width} > 0 ) {
+                push @column_headings,
+                  [ $columns{$col}{width}, $columns{$col}{name} ];
+                my $content_rows = scalar @{ $columns{$col}{content} };
+                $total_rows = $content_rows if $content_rows > $total_rows;
+            }
+        }
+
+        # Build table rows
+        for my $i ( 0 .. $total_rows - 1 ) {
+            my @row = ();
+            foreach my $col (@column_order) {
+                if ( $columns{$col}{width} > 0 ) {
+                    my $content_item = $columns{$col}{content}[$i]
+                      // "";    # Use empty string if content array is shorter
+                    push @row, $content_item;
+                }
+            }
+            push @table_rows, \@row;
+        }
+
+        my $table = Text::SimpleTable->new(@column_headings);
+
+        foreach my $row (@table_rows) {
+            $table->row( @{$row} );
+        }
+
+        my $outstring = "CONVERSION SUMMARY";
+        my $indent    = int( ( get_table_width() - length($outstring) ) / 2 );
+
+        print ' ' x $indent . "\e[1;32m$outstring\e[0m\n";
+        print "\n\e[1m$file_type Files Converted\e[0m\n";
+        print $table->draw();
+        print "\nSource Directory:      $input_dir\n";
+        print "Destination Directory: $output_dir\n";
     }
-
-    my $table = Text::SimpleTable->new(@column_headings);
-
-    foreach my $row (@table_rows) {
-        $table->row( @{$row} );
-    }
-
-    my $outstring = "CONVERSION SUMMARY";
-    my $indent    = int( ( get_table_width() - length($outstring) ) / 2 );
-
-    print ' ' x $indent . "\e[1;32m$outstring\e[0m\n";
-    print "\n\e[1m$file_type Files Converted\e[0m\n";
-    print $table->draw();
-    print "\nSource Directory:      $input_dir\n";
-    print "Destination Directory: $output_dir\n";
 }
