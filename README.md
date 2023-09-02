@@ -22,6 +22,7 @@ This is a Perl script that will convert printer, print, and filament profile set
 - Supports wildcard input patterns to batch process multiple files at once
 - Autodetects the type of the input config file and converts it appropriately
 - Won't clobber existing output files by default
+- Can "merge" new parameters into an existing .json file without modifying the existing data. This is useful when OrcaSlicer is updated to implement additional parameters from SuperSlicer/PrusaSlicer. Existing or previously converted .json files can be updated to include parameters from a SuperSlicer/PrusaSlicer .ini file that aren't already there, without affecting any of the data that is already present.
 
 ## Limitations and Known Issues
 
@@ -39,7 +40,6 @@ This is a Perl script that will convert printer, print, and filament profile set
 
 ### Print Profiles
 - SuperSlicer and (to a lesser extent) PrusaSlicer have many print parameters that can be entered as either an absolute value or as a percentage of some other value. In the majority of cases, OrcaSlicer requires these parameters to be given as absolute values. Currently this script will handle the necessary conversions and calculations, but be aware that if you are used to using these percent-based values, many setting will no longer "scale" in OrcaSlicer when other settings are adjusted.
-- Related to the previous note, there are many parameters that Super/PrusaSlicer allow to be given as a percent of the nozzle diameter, but OrcaSlicer requires an absolute value instead. The problem is that the nozzle diameter is not stored in the print profile, so by default, the script does not know how to calculate the corresponding absolute value. To address this, the user should use the `nozzle-size` command-line option (documented below) when converting print profiles to specify the diameter of the nozzle the profile is intended to be used with (e.g. `--nozzle-size 0.4`). If this command-line option is not used, then the script will assume the nozzle diameter is double the normal layer height specified in the profile. This should work fine in the fairly common scenario where a profile for a 0.4mm nozzle uses a 0.2mm layer height, but will likely produce undesirable results for things like "fine" and "superfine" profiles that use very small layer heights. Therefore, it is recommended to always use the `nozzle-size` command-line option when converting print profiles.
 - The script will carry over the `inherits` parameter if it exists in the source profile, but I have not been able to test this because none of my profiles "inherit" from other profiles. If your profiles rely on inheritance, the behavior in OrcaSlicer might be unpredictable.
 
 ### Printer Profiles
@@ -98,10 +98,10 @@ Optionally, you can use command-line options to tell the script what you'd like 
 perl superslicer_to_orca.pl --input <PATTERN> --outdir <DIRECTORY> [OPTIONS]
 ```
 
-On my Windows-based system, the following command will batch convert all my SuperSlicer filament profiles so that they all appear in OrcaSlicer the next time it is started:
+On my Windows-based system, the following command will batch convert all my SuperSlicer filament profiles without overwriting any existing files and the newly converted filament profiles will all appear in OrcaSlicer the next time it is started:
 
 ```
-perl superslicer_to_orca.pl --input C:\Users\%USERNAME%\AppData\Roaming\SuperSlicer\filament\*.ini --outdir C:\Users\%USERNAME%\AppData\Roaming\OrcaSlicer\
+perl superslicer_to_orca.pl --input C:\Users\%USERNAME%\AppData\Roaming\SuperSlicer\filament\*.ini --outdir C:\Users\%USERNAME%\AppData\Roaming\OrcaSlicer\ --on-existing skip
 ```
 
 >[!IMPORTANT]
@@ -132,9 +132,9 @@ The script accepts the following command-line options:
     ```
     ~/.config/OrcaSlicer
     ```
-- `--overwrite`: Forces overwriting existing output files. Use this option to skip being prompted whether you want to overwrite. (Optional)
 - `--nozzle-size <DECIMAL>`: For print profiles, specifies the diameter (in mm) of the nozzle the print profile is intended to be used with (e.g. --nozzle-size 0.4). If this is not specified, the script will prompt you to enter a nozzle size when converting print profiles. (Optional)
 - `--physical-printer <PATTERN>`: Specifies the INI file for the corresponding "physical printer" when converting printer config files. If this option is not used, the script will give you a choice among detected "physical printer" profiles. See [A Note About Printer Profiles](#a-note-about-printer-profiles) for more information. (Optional)
+- `--on-existing <CHOICE>`: Forces the behavior when an output file already exists. Valid choices are: `skip` to leave all existing files alone, `overwrite` to overwrite all existing output files, and `merge` to merge new key/value pairs into all existing output files while leaving existing key/value pairs unmodified. (Optional)
 - `--force-output`: Forces the script to output the converted JSON files to the output directory specified with `--outdir`. Use this option if you do not want the new files to be placed in your OrcaSlicer settings folder. (Optional)
 - `-h`, `--help`: Displays usage information.
 

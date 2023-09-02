@@ -102,20 +102,17 @@ my %status = (
     ini_type         => undef,
     ironing_type     => undef,
     iterations_left  => undef,
-
-    dirs            => {
+    dirs             => {
         output => undef,
         data   =>
           dir( File::HomeDir->my_home, @{ $system_directories{'os'}{$^O} } ),
         slicer => undef,
     },
-
     to_var => {
         external_perimeters_first => undef,
         infill_first              => undef,
         ironing                   => undef,
     },
-
     reset => {
         on_existing                   => 0,
         physical_printer              => 0,
@@ -124,8 +121,7 @@ my %status = (
         compatible_printers_condition => 0,
         compatible_prints_condition   => 0
     },
-
-      value => {
+    value => {
         on_existing                   => undef,
         physical_printer              => undef,
         nozzle_size                   => undef,
@@ -170,9 +166,7 @@ $status{value}{on_existing} = $on_existing_opts{overwrite}
   if $status{legacy_overwrite};
 
 # Set default output directory if not specified
-if ( !$status{dirs}{output} ) {
-    $status{dirs}{output} = dir( $status{dirs}{data}, 'OrcaSlicer' );
-}
+$status{dirs}{output} //= dir( $status{dirs}{data}, 'OrcaSlicer' );
 
 # Subroutine to verify output directory before writing
 sub check_output_directory {
@@ -230,7 +224,6 @@ sub multivalue_to_array {
 # Subroutine to translate the feature print sequence settings
 sub evaluate_print_order {
     my ( $external_perimeters_first, $infill_first ) = @_;
-
     if ( !$external_perimeters_first && !$infill_first ) {
         return "inner wall/outer wall/infill";
     }
@@ -251,18 +244,15 @@ sub evaluate_print_order {
 # Subroutine to translate the ironing type settings
 sub evaluate_ironing_type {
     my ( $ironing, $ironing_type ) = @_;
-
     if ( defined $ironing && $ironing ) {
         return defined $ironing_type ? $ironing_type : "no ironing";
     }
-
     return "no ironing";
 }
 
 sub percent_to_float {
     my ($subject_value) = @_;
     return $subject_value if ( !is_percent($subject_value) );
-
     my $new_float = remove_percent($subject_value) / 100;
     return ( $new_float > 2 ) ? '2' : "" . $new_float;
 }
@@ -270,7 +260,6 @@ sub percent_to_float {
 # Subroutine to convert percentage value to millimeters
 sub percent_to_mm {
     my ( $mm_comparator, $percent_param ) = @_;
-
     return $percent_param if !is_percent($percent_param);
     return undef          if is_percent($mm_comparator);
     return "" . ( $mm_comparator * ( remove_percent($percent_param) / 100 ) );
@@ -279,7 +268,6 @@ sub percent_to_mm {
 # Subroutine to convert millimeter values to percentage
 sub mm_to_percent {
     my ( $mm_comparator, $mm_param ) = @_;
-
     return $mm_param if is_percent($mm_param);
     return undef     if is_percent($mm_comparator);
     return ( ( $mm_param / $mm_comparator ) * 100 ) . "%";
@@ -783,7 +771,7 @@ sub detect_ini_type {
         }
     }
 
-    # Check if all counts are less than 10; return undef if true
+    # Return undef Check if all counts are less than 10
     my $invalid_ini = 1;
     foreach my $count ( values %type_counts ) {
         if ( $count >= 10 ) {
@@ -811,9 +799,8 @@ sub convert_params {
     # Some printer parameters need to be converted to arrays
     if ( exists $multivalue_params{$parameter} ) {
         $new_value = [ multivalue_to_array($new_value) ];
-        if ( $multivalue_params{$parameter} eq 'single' ) {
-            $new_value = $new_value->[0];
-        }
+        $new_value = $new_value->[0]
+          if ( $multivalue_params{$parameter} eq 'single' );
     }
 
     # SuperSlicer has a "default_speed" parameter that PrusaSlicer doesn't,
@@ -855,10 +842,10 @@ sub convert_params {
             "The \e[1m$file\e[0m " . $status{ini_type} . " profile has the "
               . "following \e[1m$parameter\e[0m value:\n\n\t\e[40m\e[0;93m"
               . "$new_value\e[0m\n\nIf you keep this value, this "
-              . $status{ini_type} . " profile will not be visible in "
+              . "$status{ini_type} profile will not be visible in "
               . "OrcaSlicer unless you have selected a $affected_profile that "
               . "satisfies all the conditions specified above. If you discard "
-              . "this value, this " . $status{ini_type} . " profile will be "
+              . "this value, this $status{ini_type} profile will be "
               . "visible regardless of which $affected_profile you have "
               . "selected.\n\nDo you want to KEEP this value or DISCARD it?\n\n",
             1,
@@ -1287,13 +1274,26 @@ sub ini_reader {
 sub merge_new_parameters {
     my ($existing_file) = @_;
     my $existing_json = decode_json( $existing_file->slurp );
-    #foreach my $key ( keys %new_hash ) {
-    #    $existing_json->{$key} = $new_hash{$key}
-    #      unless exists $existing_json->{$key};
     foreach my $key ( keys %$existing_json ) {
         $new_hash{$key} = $existing_json->{$key};
     }
-    #%new_hash = %$existing_json;
+}
+
+# Subroutine to reset the tracked data to prepare for the next input file
+sub reset_loop {
+    %new_hash = ();
+    $status{max_temp} = 0;
+    $status{ini_type}                          //= undef;
+    $status{to_var}{external_perimeters_first} //= undef;
+    $status{to_var}{infill_first}              //= undef;
+    $status{to_var}{ironing}                   //= undef;
+    $status{ironing_type}                      //= undef;
+    for my $param ( keys %{ $status{reset} } ) {
+        if ( $status{reset}{$param} ) {
+            $status{value}{$param} = undef;
+            $status{reset}{$param} = 0;
+        }
+    }
 }
 
 sub log_file_status {
@@ -1318,22 +1318,14 @@ sub log_file_status {
           ? $status{value}{physical_printer}->dir
           : "";
     }
-
-    push @{ $converted_files{ ucfirst($status{ini_type}) } }, \%completed_file;
-
-    # This subroutine is always called at the end of the loop, so go ahead
-    # and reset the tracking parameters here
-    foreach my $param ( keys %{ $status{reset} } ) {
-        if ( !!$status{reset}{$param} ) {
-            $status{value}{$param} = undef;
-            $status{reset}{$param} = 0;
-        }
-    }
+    push @{ $converted_files{ ucfirst( $status{ini_type} ) } },
+      \%completed_file;
+    reset_loop();
 }
 
 sub display_menu {
     my ( $prompt, $is_single_option, @options ) = @_;
-
+    my $quit         = "\e[1;31m<QUIT>\e[0m";
     my %menu_options = (
         prompt           => $prompt,
         clear_screen     => 1,
@@ -1343,18 +1335,18 @@ sub display_menu {
     );
 
     if ($is_single_option) {
-        push @options, "\e[1;31m<QUIT>\e[0m";
+        push @options, $quit;
         my $choice = Term::Choose::choose( \@options, \%menu_options );
-        exit_with_conversion_summary() if $choice eq "\e[1;31m<QUIT>\e[0m";
+        exit_with_conversion_summary() if $choice eq $quit;
         return $choice;
     }
     else {
         $menu_options{'layout'}              = 1;
         $menu_options{'include_highlighted'} = 1;
-        my @menu_items = ( '<ALL>', @options, "\e[1;31m<QUIT>\e[0m" );
+        my @menu_items = ( '<ALL>', @options, $quit );
         my @choices    = Term::Choose::choose( \@menu_items, \%menu_options );
         exit_with_conversion_summary()
-          if grep { $_ eq "\e[1;31m<QUIT>\e[0m" } @choices;
+          if grep { $_ eq $quit } @choices;
         return @options if grep { $_ eq '<ALL>' } @choices;
         return @choices;
     }
@@ -1362,10 +1354,9 @@ sub display_menu {
 
 sub ask_yes_to_all {
     my ( $param, $file ) = @_;
-    #die($status{value}{$param});
     return if !$status{iterations_left};
     my $choice = display_menu(
-        "You have chosen " . $status{value}{$param} . ". Would you like to "
+        "You have chosen \e[1m$status{value}{$param}\e[0m. Would you like to "
           . "apply this choice to ALL remaining profiles you are importing in "
           . "this session? Or just to \e[1m$file\e[0m?\n",
         1,
@@ -1373,10 +1364,6 @@ sub ask_yes_to_all {
     );
     $status{reset}{$param} = 1
       if ( $choice ne 'ALL REMAINING PROFILES' );
-}
-
-sub reset_loop {
-
 }
 
 ###################
@@ -1443,25 +1430,6 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     my $input_file = $expanded_input_files[$index];
     my $dir        = $input_file->dir;
     my $file       = basename( $input_file->basename, ".ini" );
-
-    # Reset tracking variables and hashes
-    %new_hash = ();
-    $status{max_temp} = 0;
-    foreach (
-        \$status{ini_type},
-        \$status{to_var}{external_perimeters_first},
-        \$status{to_var}{infill_first},
-        \$status{to_var}{ironing},
-        \$status{ironing_type}
-      )
-    {
-        $$_ //= undef;
-    }
-    #%param_to_var = (
-    #    'external_perimeters_first' => \$external_perimeters_first,
-    #    'infill_first'              => \$infill_first,
-    #    'ironing'                   => \$ironing,
-    #);
 
     # Read the input INI file and set source slicer flavor
     my %source_ini = ini_reader($input_file);
