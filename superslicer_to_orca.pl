@@ -51,9 +51,13 @@ Options:
                                 script will give you a choice among detected
                                 "physical printer" profiles. (Optional)
 
-  --overwrite                   Forces overwriting existing output files. Use this
-                                option to skip being prompted whether you want to
-                                overwrite. (Optional)
+  --on-existing <CHOICE>        Forces the behavior when an output file already
+                                exists. Valid choices are: "skip" to leave all 
+                                existing files alone, "overwrite" to overwrite all 
+                                existing output files, and "merge" to merge new
+                                key/value pairs into all existing output files
+                                while leaving existing key/value pairs unmodified.
+                                (Optional)
 
   --force-output                Forces the script to output the converted JSON
                                 files to the output directory specified with 
@@ -91,12 +95,13 @@ my %system_directories = (
 );
 
 my %status = (
-    force_out       => 0,
-    max_temp        => 0,
-    slicer_flavor   => undef,
-    ini_type        => undef,
-    ironing_type    => undef,
-    iterations_left => undef,
+    force_out        => 0,
+    legacy_overwrite => 0,
+    max_temp         => 0,
+    slicer_flavor    => undef,
+    ini_type         => undef,
+    ironing_type     => undef,
+    iterations_left  => undef,
 
     dirs            => {
         output => undef,
@@ -134,12 +139,35 @@ my %status = (
 GetOptions(
     "input:s{1,}"        => \@input_files,
     "outdir:s"           => \$status{dirs}{output},
-    "overwrite"          => \$status{value}{overwrite},
+    "overwrite"          => \$status{legacy_overwrite},
+    "on-existing:s"      => \$status{value}{on_existing},
     "nozzle-size"        => \$status{value}{nozzle_size},
     "physical-printer:s" => \$status{value}{physical_printer},
     "force-output"       => \$status{force_out},
     "h|help"             => sub { print_usage_and_exit(); },
 ) or die("Error in command-line arguments.\n");
+
+# Make sure --on-existing was given a valid choice
+my %on_existing_opts = (
+    skip      => 'LEAVE IT ALONE',
+    merge     => 'MERGE NEW PARAMETERS',
+    overwrite => 'OVERWRITE'
+);
+
+if ( defined $status{value}{on_existing} ) {
+    if ( exists $on_existing_opts{ $status{value}{on_existing} } ) {
+        $status{value}{on_existing} =
+          $on_existing_opts{ $status{value}{on_existing} };
+    }
+    else {
+        die(    "Invalid value for --on-existing: $status{value}{on_existing}."
+              . " Valid values are 'skip', 'merge', and 'overwrite'.\n" );
+    }
+}
+
+# Handle deprecated --overwrite option to maintain compatibility
+$status{value}{on_existing} = $on_existing_opts{overwrite}
+  if $status{legacy_overwrite};
 
 # Set default output directory if not specified
 if ( !$status{dirs}{output} ) {
@@ -1166,8 +1194,6 @@ sub handle_physical_printer {
                 1, @item_names
             );
 
-            exit if $status{value}{physical_printer} eq '<QUIT>';
-
             unless ( $status{value}{physical_printer} eq '<NONE>' ) {
                 $status{value}{physical_printer} =
                   file( $item_dir, $status{value}{physical_printer} . '.ini' );
@@ -1319,7 +1345,7 @@ sub display_menu {
     if ($is_single_option) {
         push @options, "\e[1;31m<QUIT>\e[0m";
         my $choice = Term::Choose::choose( \@options, \%menu_options );
-        exit if $choice eq "\e[1;31m<QUIT>\e[0m";
+        exit_with_conversion_summary() if $choice eq "\e[1;31m<QUIT>\e[0m";
         return $choice;
     }
     else {
@@ -1327,7 +1353,8 @@ sub display_menu {
         $menu_options{'include_highlighted'} = 1;
         my @menu_items = ( '<ALL>', @options, "\e[1;31m<QUIT>\e[0m" );
         my @choices    = Term::Choose::choose( \@menu_items, \%menu_options );
-        exit            if grep { $_ eq "\e[1;31m<QUIT>\e[0m" } @choices;
+        exit_with_conversion_summary()
+          if grep { $_ eq "\e[1;31m<QUIT>\e[0m" } @choices;
         return @options if grep { $_ eq '<ALL>' } @choices;
         return @choices;
     }
@@ -1554,32 +1581,36 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     # Check if the output file already exists and handle overwrite option
     if ( -e $output_file ) {
         if ( !defined $status{value}{on_existing} ) {
-            my @menu_items =
-              ( 'LEAVE IT ALONE', 'OVERWRITE', 'MERGE NEW PARAMETERS' );
+            my @menu_items = (
+                $on_existing_opts{skip},
+                $on_existing_opts{overwrite},
+                $on_existing_opts{merge}
+            );
             my $output_basename =
               "\e[40m\e[0;93m" . $output_file->basename . "\e[0m";
             $status{value}{on_existing} = display_menu(
                 "Output file '$output_file' already exists!\n\n"
-                  . "If you \e[1mLEAVE IT ALONE\e[0m, the existing file will not "
-                  . "be modified and this profile will not be converted.\n\nIf "
-                  . "you \e[1mOVERWRITE\e[0m it, $output_basename will be "
-                  . "replaced with the contents of this converted profile.\n\nIf "
-                  . "you \e[1mMERGE NEW PARAMETERS\e[0m, $output_basename will be "
+                  . "If you \e[1m$on_existing_opts{skip}\e[0m, the existing "
+                  . "file will not be modified and this profile will not be "
+                  . "converted.\n\nIf you \e[1m$on_existing_opts{overwrite}"
+                  . "\e[0m it, $output_basename will be replaced with the "
+                  . "contents of this converted profile.\n\nIf you \e[1m"
+                  . "$on_existing_opts{merge}\e[0m, $output_basename will be "
                   . "amended to add any new key/value pairs from the source .ini "
-                  . "that are not already present. Pre-existing key/value pairs in "
-                  . "$output_basename will not be altered.\n\n"
+                  . "that are not already present. Pre-existing key/value pairs "
+                  . "in $output_basename will not be altered.\n\n"
                   . "What would you like to do?\n",
                 1, @menu_items
             );
             ask_yes_to_all( 'on_existing', $file );
         }
 
-        if ( $status{value}{on_existing} eq 'LEAVE IT ALONE' ) {
+        if ( $status{value}{on_existing} eq $on_existing_opts{skip} ) {
             log_file_status( $input_file, $output_file,
                 $status{slicer_flavor}, "NO", "Target file exists" );
             next;
         }
-        elsif ( $status{value}{on_existing} eq 'MERGE NEW PARAMETERS' ) {
+        elsif ( $status{value}{on_existing} eq $on_existing_opts{merge} ) {
             merge_new_parameters($output_file);
         }
 
@@ -1592,7 +1623,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         $input_file,
         $output_file,
         $status{slicer_flavor},
-        ( $status{value}{on_existing} eq 'MERGE NEW PARAMETERS' )
+        ( $status{value}{on_existing} eq $on_existing_opts{merge} )
         ? "MERGED"
         : "YES",
         undef
@@ -1603,6 +1634,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
 exit_with_conversion_summary();
 
 sub exit_with_conversion_summary {
+    exit if (!keys %converted_files);
     foreach my $file_type ( keys %converted_files ) {
 
         my $max_table_width = 100;
@@ -1748,5 +1780,6 @@ sub exit_with_conversion_summary {
         print $table->draw();
         print "\nSource Directory:      $input_dir\n";
         print "Destination Directory: $output_dir\n";
+        exit;
     }
 }
