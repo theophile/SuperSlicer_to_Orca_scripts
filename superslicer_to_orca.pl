@@ -383,7 +383,13 @@ my %parameter_map = (
         travel_speed_z                     => 'travel_speed_z',
         travel_speed                       => 'travel_speed',
         support_tree_angle                 => 'tree_support_branch_angle',
+        support_tree_angle_slow            => 'tree_support_angle_slow',
         support_tree_branch_diameter       => 'tree_support_branch_diameter',
+        support_tree_branch_diameter_angle => 'tree_support_branch_diameter_angle',
+        support_tree_branch_diameter_double_wall => 
+          'tree_support_branch_diameter_double_wall',
+        support_tree_tip_diameter          => 'tree_support_tip_diameter',
+        support_tree_top_rate              => 'tree_support_top_rate',
         wall_distribution_count            => 'wall_distribution_count',
         perimeter_generator                => 'wall_generator',
         perimeters                         => 'wall_loops',
@@ -411,11 +417,11 @@ my %parameter_map = (
         complete_objects                   => 'print_sequence',
         brim_type                          => 'brim_type',
         notes                              => 'notes',
-        support_material_style             => 1,
-        ironing                            => 1,
-        ironing_type                       => 1,
-        external_perimeters_first          => 1,
-        infill_first                       => 1
+        support_material_style             => 'support_material_style',
+        ironing                            => 'ironing',
+        ironing_type                       => 'ironing_type',
+        external_perimeters_first          => 'external_perimeters_first',
+        infill_first                       => 'infill_first'
     },
 
     'filament' => {
@@ -697,7 +703,7 @@ my %support_styles = (
     grid    => [ 'normal', 'grid' ],
     snug    => [ 'normal', 'snug' ],
     tree    => [ 'tree',   'default' ],
-    organic => [ 'tree',   'default' ]
+    organic => [ 'tree',   'organic' ]
 );
 
 # Recognized support pattern types
@@ -970,6 +976,7 @@ sub convert_params {
               : 'manual';
             $new_hash{'support_type'}  = "${support_type}(${genstyle})";
             $new_hash{'support_style'} = $support_style;
+            next;
         },
 
         # Translate infill types
@@ -1591,7 +1598,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         $input_file,
         $output_file,
         $status{slicer_flavor},
-        ( $status{value}{on_existing} eq $on_existing_opts{merge} )
+        ( $status{value}{on_existing} // '' eq $on_existing_opts{merge} )
         ? "MERGED"
         : "YES",
         undef
