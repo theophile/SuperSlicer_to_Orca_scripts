@@ -1598,7 +1598,10 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         $input_file,
         $output_file,
         $status{slicer_flavor},
-        ( $status{value}{on_existing} // '' eq $on_existing_opts{merge} )
+        (
+                 ( defined $status{value}{on_existing} )
+              && ( $status{value}{on_existing} eq $on_existing_opts{merge} )
+          )
         ? "MERGED"
         : "YES",
         undef
