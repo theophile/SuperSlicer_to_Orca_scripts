@@ -1658,6 +1658,10 @@ exit_with_conversion_summary();
 
 sub exit_with_conversion_summary {
     exit if (!keys %converted_files);
+    my ($input_dir, $output_dir);
+    my $indent = 0;
+    my $outstring = "CONVERSION SUMMARY";
+    my %tables;
     foreach my $file_type ( keys %converted_files ) {
 
         my $max_table_width = 100;
@@ -1709,8 +1713,7 @@ sub exit_with_conversion_summary {
             return $total_table_width;
         }
 
-        my $input_dir = $converted_files{$file_type}[0]{input_dir};
-        my $output_dir;
+        $input_dir = $converted_files{$file_type}[0]{input_dir};
         foreach my $index ( 0 .. $#{ $converted_files{$file_type} } ) {
             $output_dir = $converted_files{$file_type}[$index]{output_dir};
             last if $output_dir ne "";
@@ -1795,14 +1798,17 @@ sub exit_with_conversion_summary {
             $table->row( @{$row} );
         }
 
-        my $outstring = "CONVERSION SUMMARY";
-        my $indent    = int( ( get_table_width() - length($outstring) ) / 2 );
+        my $new_indent = int( ( get_table_width() - length($outstring) ) / 2 );
+        $indent = $new_indent if $new_indent > $indent;
 
-        print ' ' x $indent . "\e[1;32m$outstring\e[0m\n";
-        print "\n\e[1m$file_type Files Converted\e[0m\n";
-        print $table->draw();
-        print "\nSource Directory:      $input_dir\n";
-        print "Destination Directory: $output_dir\n";
-        exit;
+        $tables{$file_type} = $table;
     }
+    print ' ' x $indent . "\e[1;32m$outstring\e[0m\n";
+    for my $type ( keys %tables ) {
+        print "\n\e[1m$type Files Converted\e[0m\n";
+        print $tables{$type}->draw();
+    }
+    print "\nSource Directory:      $input_dir\n";
+    print "Destination Directory: $output_dir\n";
+    exit;
 }
