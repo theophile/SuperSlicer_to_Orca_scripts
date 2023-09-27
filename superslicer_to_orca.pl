@@ -237,29 +237,25 @@ sub is_config_bundle {
     return $bundle_detected;
 }
 
+# Subroutine to process a config bundle and split it up into temporary
+# individual .ini files for conversion
 sub process_config_bundle {
     my $file           = file(@_)->slurp();
-    my $detect_pattern = qr/\[([\w\s\+\-]+):([\w\s\+\-]+)\]\n(.*?)\n(?=\[|$)/s;
-    our ($header_line) = $file =~ /^(# generated[^\n]*)/m;
+    my ($header_line)  = $file =~ /^(# generated[^\n]*)/m;
     my @file_objects;
 
-    sub create_temp_file {
-        my ( $profile_name, $content ) = @_;
-        my $temp_file = file( $status{dirs}{temp}, "$profile_name.ini" );
-        $temp_file->spew("$header_line\n\n$content");
-        return $temp_file;
-    }
-
-    while ( $file =~ /$detect_pattern/g ) {
+    # Find line in the form [profile_type:profile_name], and treat everything
+    # between that and the next such line as profile_content
+    while ( $file =~ /\[([\w\s\+\-]+):([\w\s\+\-]+)\]\n(.*?)\n(?=\[|$)/sg) {
         my ( $profile_type, $profile_name, $profile_content ) = ( $1, $2, $3 );
-        if ( $profile_type eq "physical_printer" ) {
-            my $pp_dir =
-              dir( $status{dirs}{slicer} )->subdir('physical_printer');
-            my $temp_file = file( $pp_dir, "$profile_name.ini" );
-            $temp_file->spew("$header_line\n\n$profile_content");
-            next;
-        }
-        push @file_objects, create_temp_file( $profile_name, $profile_content );
+        my $physical_printer_profile = ( $profile_type eq "physical_printer" );
+        my $temp_file =
+          ($physical_printer_profile)
+          ? file( $status{dirs}{slicer}->subdir('physical_printer'),
+            "$profile_name.ini" )
+          : file( $status{dirs}{temp}, "$profile_name.ini" );
+        $temp_file->spew("$header_line\n\n$profile_content");
+        push @file_objects, $temp_file unless $physical_printer_profile;
     }
     return @file_objects;
 }
