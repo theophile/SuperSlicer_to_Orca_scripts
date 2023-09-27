@@ -17,6 +17,7 @@ This is a Perl script that will convert printer, print, and filament profile set
 ## Features
 
 - Converts PrusaSlicer and SuperSlicer printer, print, and filament INI files to OrcaSlicer JSON
+- Can convert an entire config bundle using the `--input` option
 - Interactive mode autodetecs your SuperSlicer, PrusaSlicer, and OrcaSlicer installations and asks you what you want to convert
 - Advanced mode uses command-line options to specify parameters and can be used to batch-process multiple files without user interaction
 - Supports wildcard input patterns to batch process multiple files at once
@@ -56,6 +57,7 @@ This is a Perl script that will convert printer, print, and filament profile set
   - File::Glob
   - File::HomeDir
   - Path::Class
+  - Path::Tiny
   - String::Escape
   - Term::Choose
   - Term::Form::ReadLine
@@ -75,7 +77,7 @@ This is a Perl script that will convert printer, print, and filament profile set
 2. Install the required Perl modules using CPAN or your system's package manager. For example, if you're using CPAN:
 
     ```
-    cpan Getopt::Long File::Basename File::Glob File::HomeDir Path::Class String::Escape Term::Choose Term::Form::ReadLine Text::SimpleTable JSON
+    cpan Getopt::Long File::Basename File::Glob File::HomeDir Path::Class Path::Tiny String::Escape Term::Choose Term::Form::ReadLine Text::SimpleTable JSON
     ```
 
 3. Clone this repository or download the script directly from GitHub.

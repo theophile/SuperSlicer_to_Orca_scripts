@@ -1,12 +1,14 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+no warnings "exiting";
 
 use Getopt::Long;
 use File::Basename;
 use File::Glob ':glob';
 use File::HomeDir;
 use Path::Class;
+use Path::Tiny;
 use String::Escape qw(unbackslash);
 use Term::Choose;
 use Term::Form::ReadLine;
@@ -107,6 +109,7 @@ my %status = (
         data   =>
           dir( File::HomeDir->my_home, @{ $system_directories{'os'}{$^O} } ),
         slicer => undef,
+        temp   => undef,
     },
     to_var => {
         external_perimeters_first => undef,
@@ -219,6 +222,46 @@ sub multivalue_to_array {
     my ($input_string) = @_;
     my $delimiter = $input_string =~ /,/ ? ',' : ';';
     return split( /$delimiter/, $input_string );
+}
+
+# Subroutine to check if input file is a config bundle
+sub is_config_bundle {
+    my ($file_path)     = @_;
+    my $file            = file($file_path);
+    my $bundle_detected = $file->slurp() =~ /\[\w+:[\w\s\+\-]+\]/ ? 1 : 0;
+    if ($bundle_detected) {
+        $status{dirs}{temp}   = dir( Path::Tiny->tempdir );
+        $status{dirs}{slicer} = $status{dirs}{temp};
+        $status{dirs}{slicer}->subdir('physical_printer')->mkpath;
+    }
+    return $bundle_detected;
+}
+
+sub process_config_bundle {
+    my $file           = file(@_)->slurp();
+    my $detect_pattern = qr/\[([\w\s\+\-]+):([\w\s\+\-]+)\]\n(.*?)\n(?=\[|$)/s;
+    our ($header_line) = $file =~ /^(# generated[^\n]*)/m;
+    my @file_objects;
+
+    sub create_temp_file {
+        my ( $profile_name, $content ) = @_;
+        my $temp_file = file( $status{dirs}{temp}, "$profile_name.ini" );
+        $temp_file->spew("$header_line\n\n$content");
+        return $temp_file;
+    }
+
+    while ( $file =~ /$detect_pattern/g ) {
+        my ( $profile_type, $profile_name, $profile_content ) = ( $1, $2, $3 );
+        if ( $profile_type eq "physical_printer" ) {
+            my $pp_dir =
+              dir( $status{dirs}{slicer} )->subdir('physical_printer');
+            my $temp_file = file( $pp_dir, "$profile_name.ini" );
+            $temp_file->spew("$header_line\n\n$profile_content");
+            next;
+        }
+        push @file_objects, create_temp_file( $profile_name, $profile_content );
+    }
+    return @file_objects;
 }
 
 # Subroutine to translate the feature print sequence settings
@@ -1227,6 +1270,7 @@ sub link_system_printer {
     }
     my ($input_file) = @_;
     my $sys_dir = dir( $status{dirs}{output}, 'system' );
+    return ( 'inherits' => '' ) unless -d $sys_dir;
     my %unique_names;
     foreach my $file ( $sys_dir->children ) {
         next unless -f $file && $file->basename =~ qr/\.json$/;
@@ -1423,7 +1467,8 @@ foreach my $pattern (@input_files) {
       ( -d $pattern ) ? dir($pattern)->children : bsd_glob($pattern);
     foreach my $file (@iterator) {
         next unless -f $file && file($file)->basename =~ qr/\.ini$/;
-        push @expanded_input_files, file($file);
+        push @expanded_input_files,
+          is_config_bundle($file) ? process_config_bundle($file) : file($file);
     }
 }
 
