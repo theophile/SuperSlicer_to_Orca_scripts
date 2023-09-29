@@ -1444,6 +1444,7 @@ if ( !@input_files ) {
       display_menu( "What kind of profile would you like to import?\n",
         1, @config_types );
 
+    $status{ini_type} = lc($config_choice);
     my $item_dir = $status{dirs}{slicer}->subdir( lc($config_choice) );
 
     my @items      = $item_dir->children(qr/\.ini$/);
@@ -1488,7 +1489,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         next;
     }
 
-    $status{ini_type} = detect_ini_type(%source_ini);
+    $status{ini_type} = $status{ini_type} // detect_ini_type(%source_ini);
     if ( !defined $status{ini_type} ) {
         $status{ini_type} = "unsupported";
         log_file_status( $input_file, undef, $status{slicer_flavor}, "NO",
