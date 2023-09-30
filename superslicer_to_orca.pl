@@ -175,12 +175,10 @@ $status{dirs}{output} //= dir( $status{dirs}{data}, 'OrcaSlicer' );
 sub check_output_directory {
     my ($directory) = @_;
     my $die_msg = "\nOutput directory $directory cannot be found.\n";
-    unless ( $status{force_out} ) {
+    unless ($status{force_out}) {
         $die_msg =
             $die_msg
-          . "Are you sure that "
-          . $status{dirs}{output}
-          . " is the correct "
+          . "Are you sure that " . $status{dirs}{output} . " is the correct "
           . "ROOT directory of your OrcaSlicer installation?\n(Run this "
           . "script with the -h flag for more info.\n";
     }
@@ -242,13 +240,13 @@ sub is_config_bundle {
 # Subroutine to process a config bundle and split it up into temporary
 # individual .ini files for conversion
 sub process_config_bundle {
-    my $file = file(@_)->slurp();
-    my ($header_line) = $file =~ /^(# generated[^\n]*)/m;
+    my $file           = file(@_)->slurp();
+    my ($header_line)  = $file =~ /^(# generated[^\n]*)/m;
     my @file_objects;
 
     # Find line in the form [profile_type:profile_name], and treat everything
     # between that and the next such line as profile_content
-    while ( $file =~ /\[([\w\s\+\-]+):([\w\s\+\-]+)\]\n(.*?)\n(?=\[|$)/sg ) {
+    while ( $file =~ /\[([\w\s\+\-]+):([\w\s\+\-]+)\]\n(.*?)\n(?=\[|$)/sg) {
         my ( $profile_type, $profile_name, $profile_content ) = ( $1, $2, $3 );
         my $physical_printer_profile = ( $profile_type eq "physical_printer" );
         my $temp_file =
@@ -426,16 +424,15 @@ my %parameter_map = (
         support_tree_angle                 => 'tree_support_branch_angle',
         support_tree_angle_slow            => 'tree_support_angle_slow',
         support_tree_branch_diameter       => 'tree_support_branch_diameter',
-        support_tree_branch_diameter_angle =>
-          'tree_support_branch_diameter_angle',
-        support_tree_branch_diameter_double_wall =>
+        support_tree_branch_diameter_angle => 'tree_support_branch_diameter_angle',
+        support_tree_branch_diameter_double_wall => 
           'tree_support_branch_diameter_double_wall',
-        support_tree_tip_diameter        => 'tree_support_tip_diameter',
-        support_tree_top_rate            => 'tree_support_top_rate',
-        wall_distribution_count          => 'wall_distribution_count',
-        perimeter_generator              => 'wall_generator',
-        perimeters                       => 'wall_loops',
-        wall_transition_angle            => 'wall_transition_angle',
+        support_tree_tip_diameter          => 'tree_support_tip_diameter',
+        support_tree_top_rate              => 'tree_support_top_rate',
+        wall_distribution_count            => 'wall_distribution_count',
+        perimeter_generator                => 'wall_generator',
+        perimeters                         => 'wall_loops',
+        wall_transition_angle              => 'wall_transition_angle',
         wall_transition_filter_deviation => 'wall_transition_filter_deviation',
         wall_transition_length           => 'wall_transition_length',
         wipe_tower_no_sparse_layers      => 'wipe_tower_no_sparse_layers',
@@ -857,11 +854,11 @@ sub convert_params {
       if ( $status{slicer_flavor} eq 'SuperSlicer' );
 
     # Check if the parameter maps to multiple keys in the JSON data
-    if ( ref( $parameter_map{ $status{ini_type} }{$parameter} ) eq 'ARRAY' ) {
+    if ( ref( $parameter_map{$status{ini_type}}{$parameter} ) eq 'ARRAY' ) {
 
         # If yes, set the same value for each key in the JSON data
         $new_hash{$_} = $new_value
-          for @{ $parameter_map{ $status{ini_type} }{$parameter} };
+          for @{ $parameter_map{$status{ini_type}}{$parameter} };
         return;
     }
 
@@ -887,9 +884,7 @@ sub convert_params {
         my $affected_profile = ( split( '_', $parameter ) )[1];
         chop $affected_profile;
         $status{value}{$parameter} = display_menu(
-            "The \e[1m$file\e[0m "
-              . $status{ini_type}
-              . " profile has the "
+            "The \e[1m$file\e[0m " . $status{ini_type} . " profile has the "
               . "following \e[1m$parameter\e[0m value:\n\n\t\e[40m\e[0;93m"
               . "$new_value\e[0m\n\nIf you keep this value, this "
               . "$status{ini_type} profile will not be visible in "
@@ -909,19 +904,19 @@ sub convert_params {
 
         # The custom gcode blocks need to be unquoted and unbackslashed
         # before JSON encoding
-        'start_filament_gcode'  => $unbackslash_gcode,
-        'end_filament_gcode'    => $unbackslash_gcode,
-        'post_process'          => $unbackslash_gcode,
-        'before_layer_gcode'    => $unbackslash_gcode,
-        'toolchange_gcode'      => $unbackslash_gcode,
-        'layer_gcode'           => $unbackslash_gcode,
-        'end_gcode'             => $unbackslash_gcode,
-        'pause_print_gcode'     => $unbackslash_gcode,
-        'start_gcode'           => $unbackslash_gcode,
-        'template_custom_gcode' => $unbackslash_gcode,
-        'notes'                 => $unbackslash_gcode,
-        'filament_notes'        => $unbackslash_gcode,
-        'printer_notes'         => $unbackslash_gcode,
+        'start_filament_gcode'     => $unbackslash_gcode,
+        'end_filament_gcode'       => $unbackslash_gcode,
+        'post_process'             => $unbackslash_gcode,
+        'before_layer_gcode'       => $unbackslash_gcode,
+        'toolchange_gcode'         => $unbackslash_gcode,
+        'layer_gcode'              => $unbackslash_gcode,
+        'end_gcode'                => $unbackslash_gcode,
+        'pause_print_gcode'        => $unbackslash_gcode,
+        'start_gcode'              => $unbackslash_gcode,
+        'template_custom_gcode'    => $unbackslash_gcode,
+        'notes'                    => $unbackslash_gcode,
+        'filament_notes'           => $unbackslash_gcode,
+        'printer_notes'            => $unbackslash_gcode,
 
         # Translate filament type to a specific value if it exists in
         # the mapping, otherwise keep the original value
@@ -959,12 +954,12 @@ sub convert_params {
             $unbackslash_gcode->();
             return $new_value->[0];
         },
-
+        
         'retract_lift_top' => sub {
             my $new_array = [ multivalue_to_array($new_value) ];
             $new_value = $new_array->[0];
             $unbackslash_gcode->();
-            return $zhop_enforcement{ $new_value->[0] };
+            return $zhop_enforcement{$new_value->[0]};
         },
 
         # Give user a choice about "compatible" condition strings
@@ -974,28 +969,34 @@ sub convert_params {
         # Some values may need to be converted from percent of nozzle width to
         # absolute value in mm
         'max_layer_height' => sub {
-            return percent_to_mm( $status{value}{nozzle_size}, $new_value );
-        },
-        'min_layer_height' => sub {
-            return percent_to_mm( $status{value}{nozzle_size}, $new_value );
-        },
-        'fuzzy_skin_point_dist' => sub {
-            return percent_to_mm( $status{value}{nozzle_size}, $new_value );
-        },
-        'fuzzy_skin_thickness' => sub {
-            return percent_to_mm( $status{value}{nozzle_size}, $new_value );
-        },
-        'small_perimeter_min_length' => sub {
-            return percent_to_mm( $status{value}{nozzle_size}, $new_value );
-        },
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'min_layer_height' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'fuzzy_skin_point_dist' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'fuzzy_skin_thickness' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
+          'small_perimeter_min_length' => sub {
+            return percent_to_mm( $status{value}{nozzle_size},
+                $new_value );
+          },
 
         # Convert percents to float, capping at 2 as OrcaSlicer expects
         'bridge_flow_ratio'   => sub { return percent_to_float($new_value) },
         'fill_top_flow_ratio' => sub { return percent_to_float($new_value) },
 
         'wall_transition_length' => sub {
-            return mm_to_percent( $status{value}{nozzle_size}, $new_value );
-        },
+            return mm_to_percent( $status{value}{nozzle_size},
+                $new_value );
+          },
 
         # Option "0" means "same as top," so set that manually
         'support_material_bottom_contact_distance' => sub {
@@ -1061,11 +1062,11 @@ sub convert_params {
               percent_to_mm( $source_ini{'external_perimeter_extrusion_width'},
                 $new_value );
             if ( !defined ) {
-                $new_value =
-                  percent_to_mm( $status{value}{nozzle_size}, $new_value );
+                $new_value = percent_to_mm( $status{value}{nozzle_size},
+                    $new_value );
             }
             return defined $new_value ? "" . $new_value : undef;
-        },
+          },
 
         # Interpret empty extrusion_width as zero
         'extrusion_width' =>
@@ -1230,7 +1231,7 @@ sub handle_physical_printer {
                 $status{value}{physical_printer} =
                   file( $item_dir, $status{value}{physical_printer} . '.ini' );
             }
-
+            
             ask_yes_to_all( 'physical_printer', $file );
 
         }
@@ -1241,7 +1242,7 @@ sub handle_physical_printer {
 
     return if $status{value}{physical_printer} eq '<NONE>';
 
-    my %printer_ini = ini_reader( file( $status{value}{physical_printer} ) )
+    my %printer_ini = ini_reader( file($status{value}{physical_printer}) )
       or die "Error reading " . $status{value}{physical_printer} . ": $!";
     foreach my $parameter ( keys %printer_ini ) {
 
@@ -1260,22 +1261,19 @@ sub handle_physical_printer {
 
 # Subroutine to link converted "machine" profile to system printer
 sub link_system_printer {
-    if ( defined $status{value}{inherits} ) {
-        return ( 'inherits' => $status{value}{inherits} );
+    if (defined $status{value}{inherits} ) {
+        return ( 'inherits' => $status{value}{inherits} )
     }
     my ($input_file) = @_;
     my $sys_dir = dir( $status{dirs}{output}, 'system' );
+    return ( 'inherits' => '' ) unless -d $sys_dir;
     my %unique_names;
-    if ( -d $sys_dir ) {
-        foreach my $file ( $sys_dir->children ) {
-            next unless -f $file && $file->basename =~ /\.json$/;
-            my $decoded_data = decode_json( $file->slurp );
-            if ( exists $decoded_data->{machine_list} ) {
-                for my $machine ( @{ $decoded_data->{machine_list} } ) {
-                    my $name = $machine->{name};
-                    $unique_names{$name} = 1 if $name !~ /common/i;
-                }
-            }
+    foreach my $file ( $sys_dir->children ) {
+        next unless -f $file && $file->basename =~ qr/\.json$/;
+        my $json_data = file($file)->slurp();
+        for my $machine ( @{ decode_json($json_data)->{machine_list} } ) {
+            my $name = $machine->{name};
+            $unique_names{$name} = 1 if $name !~ /common/i;
         }
     }
     my @sorted_names = sort keys %unique_names;
@@ -1295,8 +1293,8 @@ sub link_system_printer {
           . "\e[1m$input_file\e[0m:\n",
         1, @sorted_names
     );
-    ask_yes_to_all( 'inherits', $input_file );
-    $status{value}{inherits} = '' if ( $status{value}{inherits} eq '<NONE>' );
+    ask_yes_to_all('inherits', $input_file);
+    $status{value}{inherits} = '' if ($status{value}{inherits} eq '<NONE>');
 
     return ( 'inherits' => $status{value}{inherits} );
 }
@@ -1502,7 +1500,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     # Make sure output directory is correct
     my $subdir =
       $status{force_out}
-      ? dir( $status{dirs}{output} )
+      ? dir($status{dirs}{output})
       : dir( $status{dirs}{output},
         @{ $system_directories{'output'}{ $status{ini_type} } } );
 
@@ -1549,15 +1547,14 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     foreach my $parameter ( keys %source_ini ) {
 
         # Ignore parameters that Orca Slicer doesn't support
-        next unless exists $parameter_map{ $status{ini_type} }{$parameter};
+        next unless exists $parameter_map{$status{ini_type}}{$parameter};
 
         my $new_value = convert_params( $parameter, $file, %source_ini );
 
         # Move on if we didn't get a usable value. Otherwise, set the translated
         # value in the JSON data
         ( defined $new_value )
-          ? $new_hash{ $parameter_map{ $status{ini_type} }{$parameter} } =
-          $new_value
+          ? $new_hash{ $parameter_map{$status{ini_type}}{$parameter} } = $new_value
           : next;
 
         # Track the maximum commanded nozzle temperature
@@ -1651,15 +1648,15 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         : "YES",
         undef
     );
-
+    
 }
 
 exit_with_conversion_summary();
 
 sub exit_with_conversion_summary {
-    exit if ( !keys %converted_files );
-    my ( $input_dir, $output_dir );
-    my $indent    = 0;
+    exit if (!keys %converted_files);
+    my ($input_dir, $output_dir);
+    my $indent = 0;
     my $outstring = "CONVERSION SUMMARY";
     my %tables;
     foreach my $file_type ( keys %converted_files ) {
