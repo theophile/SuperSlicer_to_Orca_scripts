@@ -1266,14 +1266,17 @@ sub link_system_printer {
     }
     my ($input_file) = @_;
     my $sys_dir = dir( $status{dirs}{output}, 'system' );
-    return ( 'inherits' => '' ) unless -d $sys_dir;
     my %unique_names;
-    foreach my $file ( $sys_dir->children ) {
-        next unless -f $file && $file->basename =~ qr/\.json$/;
-        my $json_data = file($file)->slurp();
-        for my $machine ( @{ decode_json($json_data)->{machine_list} } ) {
-            my $name = $machine->{name};
-            $unique_names{$name} = 1 if $name !~ /common/i;
+    if (-d $sys_dir) {
+        foreach my $file ($sys_dir->children) {
+            next unless -f $file && $file->basename =~ /\.json$/;
+            my $decoded_data = decode_json($file->slurp);
+            if (exists $decoded_data->{machine_list}) {
+                for my $machine (@{$decoded_data->{machine_list}}) {
+                    my $name = $machine->{name};
+                    $unique_names{$name} = 1 if $name !~ /common/i;
+                }
+            }
         }
     }
     my @sorted_names = sort keys %unique_names;
