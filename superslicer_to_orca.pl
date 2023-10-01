@@ -100,6 +100,7 @@ my %status = (
     force_out        => 0,
     legacy_overwrite => 0,
     max_temp         => 0,
+    interactive_mode => 0,
     slicer_flavor    => undef,
     ini_type         => undef,
     ironing_type     => undef,
@@ -1344,6 +1345,9 @@ sub reset_loop {
             $status{reset}{$param} = 0;
         }
     }
+    unless ( $status{'interactive_mode'} ) {
+        $status{ini_type} = undef;
+    }
 }
 
 sub log_file_status {
@@ -1424,6 +1428,7 @@ sub ask_yes_to_all {
 
 # Determine what to convert if not specified
 if ( !@input_files ) {
+    $status{'interactive_mode'} = 1;
     my @source_slicers = map { $_->basename }
       grep { /PrusaSlicer|SuperSlicer/ } $status{dirs}{data}->children;
 
