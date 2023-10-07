@@ -460,6 +460,7 @@ my %parameter_map = (
         support_material_style             => 'support_material_style',
         ironing                            => 'ironing',
         ironing_type                       => 'ironing_type',
+        ironing_angle                      => 'ironing_angle',
         external_perimeters_first          => 'external_perimeters_first',
         infill_first                       => 'infill_first'
     },
