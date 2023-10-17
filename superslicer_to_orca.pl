@@ -866,7 +866,7 @@ sub convert_params {
 
     # Track state of combination settings
     if ( exists $status{to_var}{$parameter} ) {
-        ${ $status{to_var}{$parameter} } = $new_value ? 1 : 0;
+        $status{to_var}{$parameter} = $new_value ? 1 : 0;
         return;
     }
 
