@@ -583,6 +583,7 @@ my %parameter_map = (
         silent_mode                      => 'silent_mode',
         single_extruder_multi_material   => 'single_extruder_multi_material',
         thumbnails                       => 'thumbnails',
+        thumbnails_format                => 'thumbnails_format',
         template_custom_gcode            => 'template_custom_gcode',
         use_firmware_retraction          => 'use_firmware_retraction',
         use_relative_e_distances         => 'use_relative_e_distances',
@@ -804,6 +805,14 @@ my %zhop_enforcement = (
     'All surfaces' => 'All Surfaces',
     'Not on top'   => 'Bottom Only',
     'Only on top'  => 'Top Only',
+);
+
+# Mapping of thumbnail formats
+my %thumbnail_format = (
+    PNG  => 'PNG',
+    JPG  => 'JPG',
+    QOI  => 'QOI',
+    BIQU => 'BTT_TFT',
 );
 
 # Subroutine to detect what type of ini file it's being fed
@@ -1029,6 +1038,8 @@ sub convert_params {
         'gcode_flavor' => sub { return $gcode_flavors{$new_value} // undef; },
 
         'host_type' => sub { return $host_types{$new_value} },
+
+        'thumbnails_format' => sub { return $thumbnail_format{$new_value} },
 
         # Set support pattern to default if we can't match the original pattern
         'support_material_pattern' => sub {
