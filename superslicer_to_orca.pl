@@ -338,6 +338,7 @@ my %parameter_map = (
         thin_walls                      => 'detect_thin_wall',
         draft_shield                    => 'draft_shield',
         first_layer_size_compensation   => 'elefant_foot_compensation',
+        elefant_foot_compensation       => 'elefant_foot_compensation',
         enable_dynamic_overhang_speeds  => 'enable_overhang_speed',
         extra_perimeters_on_overhangs   => 'extra_perimeters_on_overhangs',
         wipe_tower                      => 'enable_prime_tower',
