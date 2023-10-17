@@ -857,11 +857,11 @@ sub convert_params {
       if ( $status{slicer_flavor} eq 'SuperSlicer' );
 
     # Check if the parameter maps to multiple keys in the JSON data
-    if ( ref( $parameter_map{$status{ini_type}}{$parameter} ) eq 'ARRAY' ) {
+    if ( ref( $parameter_map{ $status{ini_type} }{$parameter} ) eq 'ARRAY' ) {
 
         # If yes, set the same value for each key in the JSON data
         $new_hash{$_} = $new_value
-          for @{ $parameter_map{$status{ini_type}}{$parameter} };
+          for @{ $parameter_map{ $status{ini_type} }{$parameter} };
         return;
     }
 
@@ -974,23 +974,23 @@ sub convert_params {
         'max_layer_height' => sub {
             return percent_to_mm( $status{value}{nozzle_size},
                 $new_value );
-          },
-          'min_layer_height' => sub {
+        },
+        'min_layer_height' => sub {
             return percent_to_mm( $status{value}{nozzle_size},
                 $new_value );
-          },
-          'fuzzy_skin_point_dist' => sub {
+        },
+        'fuzzy_skin_point_dist' => sub {
             return percent_to_mm( $status{value}{nozzle_size},
                 $new_value );
-          },
-          'fuzzy_skin_thickness' => sub {
+        },
+        'fuzzy_skin_thickness' => sub {
             return percent_to_mm( $status{value}{nozzle_size},
                 $new_value );
-          },
-          'small_perimeter_min_length' => sub {
+        },
+        'small_perimeter_min_length' => sub {
             return percent_to_mm( $status{value}{nozzle_size},
                 $new_value );
-          },
+        },
 
         # Convert percents to float, capping at 2 as OrcaSlicer expects
         'bridge_flow_ratio'   => sub { return percent_to_float($new_value) },
@@ -999,7 +999,7 @@ sub convert_params {
         'wall_transition_length' => sub {
             return mm_to_percent( $status{value}{nozzle_size},
                 $new_value );
-          },
+        },
 
         # Option "0" means "same as top," so set that manually
         'support_material_bottom_contact_distance' => sub {
@@ -1069,7 +1069,7 @@ sub convert_params {
                     $new_value );
             }
             return defined $new_value ? "" . $new_value : undef;
-          },
+        },
 
         # Interpret empty extrusion_width as zero
         'extrusion_width' =>
@@ -1086,6 +1086,7 @@ sub convert_params {
         'external_perimeter_speed' => sub {
             return percent_to_mm( $source_ini{'perimeter_speed'}, $new_value );
         },
+
         'first_layer_speed' => sub {
             return percent_to_mm( $source_ini{'perimeter_speed'}, $new_value );
         },
@@ -1153,7 +1154,6 @@ sub convert_params {
               ? percent_to_mm( $new_hash{'sparse_infill_speed'}, $new_value )
               : $new_value;
         },
-
     );
 
     if ( exists $special_cases{$parameter} ) {
@@ -1510,7 +1510,7 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     # Make sure output directory is correct
     my $subdir =
       $status{force_out}
-      ? dir($status{dirs}{output})
+      ? dir( $status{dirs}{output} )
       : dir( $status{dirs}{output},
         @{ $system_directories{'output'}{ $status{ini_type} } } );
 
@@ -1557,15 +1557,15 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     foreach my $parameter ( keys %source_ini ) {
 
         # Ignore parameters that Orca Slicer doesn't support
-        next unless exists $parameter_map{$status{ini_type}}{$parameter};
+        next unless exists $parameter_map{ $status{ini_type} }{$parameter};
 
         my $new_value = convert_params( $parameter, $file, %source_ini );
 
         # Move on if we didn't get a usable value. Otherwise, set the translated
         # value in the JSON data
-        ( defined $new_value )
-          ? $new_hash{ $parameter_map{$status{ini_type}}{$parameter} } = $new_value
-          : next;
+        next unless defined $new_value;
+        $new_hash{ $parameter_map{ $status{ini_type} }{$parameter} } =
+          $new_value;
 
         # Track the maximum commanded nozzle temperature
         $status{max_temp} = $new_value
@@ -1658,7 +1658,6 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
         : "YES",
         undef
     );
-    
 }
 
 exit_with_conversion_summary();
