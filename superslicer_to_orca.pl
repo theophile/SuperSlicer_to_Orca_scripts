@@ -439,6 +439,7 @@ my %parameter_map = (
         wall_transition_length           => 'wall_transition_length',
         wipe_tower_no_sparse_layers      => 'wipe_tower_no_sparse_layers',
         xy_size_compensation             => 'xy_contour_compensation',
+        z_offset                         => 'z_offset',
         xy_inner_size_compensation       => 'xy_hole_compensation',
         support_material_layer_height    => 'independent_support_layer_height',
         fill_pattern                     => 'sparse_infill_pattern',
