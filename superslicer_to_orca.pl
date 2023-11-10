@@ -545,6 +545,7 @@ my %parameter_map = (
         gcode_flavor                       => 'gcode_flavor',
         inherits                           => 'inherits',
         layer_gcode                        => 'layer_change_gcode',
+        feature_gcode                      => 'change_extrusion_role_gcode',
         end_gcode                          => 'machine_end_gcode',
         machine_max_acceleration_e         => 'machine_max_acceleration_e',
         machine_max_acceleration_extruding =>
@@ -928,6 +929,7 @@ sub convert_params {
         'before_layer_gcode'       => $unbackslash_gcode,
         'toolchange_gcode'         => $unbackslash_gcode,
         'layer_gcode'              => $unbackslash_gcode,
+        'feature_gcode'            => $unbackslash_gcode,
         'end_gcode'                => $unbackslash_gcode,
         'pause_print_gcode'        => $unbackslash_gcode,
         'start_gcode'              => $unbackslash_gcode,
