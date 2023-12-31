@@ -96,6 +96,12 @@ my %system_directories = (
     }
 );
 
+my %illegal_chars = (
+    'MSWin32' => qr/[<>:"\/\\|?*\x00-\x1F]/,
+    'darwin'  => qr/[:]/,
+    'linux'   => qr[/],
+);
+
 my %status = (
     force_out        => 0,
     legacy_overwrite => 0,
@@ -250,6 +256,8 @@ sub process_config_bundle {
     while ( $file =~ /\[([\w\s\+\-]+):([^\]]+)\]\n(.*?)\n(?=\[|$)/sg) {
         my ( $profile_type, $profile_name, $profile_content ) = ( $1, $2, $3 );
         my $physical_printer_profile = ( $profile_type eq "physical_printer" );
+        my $illegal_regex = $illegal_chars{$^O} // qr/[\x00-\x1F]/;
+        $profile_name =~ s/$illegal_regex//g;
         my $temp_file =
           ($physical_printer_profile)
           ? file( $status{dirs}{slicer}->subdir('physical_printer'),
