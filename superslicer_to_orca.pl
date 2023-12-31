@@ -247,7 +247,7 @@ sub process_config_bundle {
 
     # Find line in the form [profile_type:profile_name], and treat everything
     # between that and the next such line as profile_content
-    while ( $file =~ /\[([\w\s\+\-]+):([\w\s\+\-]+)\]\n(.*?)\n(?=\[|$)/sg) {
+    while ( $file =~ /\[([\w\s\+\-]+):([^\]]+)\]\n(.*?)\n(?=\[|$)/sg) {
         my ( $profile_type, $profile_name, $profile_content ) = ( $1, $2, $3 );
         my $physical_printer_profile = ( $profile_type eq "physical_printer" );
         my $temp_file =
