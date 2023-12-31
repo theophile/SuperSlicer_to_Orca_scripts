@@ -263,7 +263,7 @@ sub process_config_bundle {
           ? file( $status{dirs}{slicer}->subdir('physical_printer'),
             "$profile_name.ini" )
           : file( $status{dirs}{temp}, "$profile_name.ini" );
-        $temp_file->spew("$header_line\n\n$profile_content");
+        $temp_file->spew("$header_line\n\nini_type = $profile_type\n$profile_content");
         push @file_objects, $temp_file unless $physical_printer_profile;
     }
     return @file_objects;
@@ -833,6 +833,8 @@ my %thumbnail_format = (
 # Subroutine to detect what type of ini file it's being fed
 sub detect_ini_type {
     my %source_ini = @_;
+
+    return $source_ini{ini_type} if exists $source_ini{ini_type};
 
     # Iterate over the keys of %parameter_map and count parameter occurrences
     my %type_counts;
