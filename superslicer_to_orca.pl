@@ -109,6 +109,7 @@ my %status = (
     interactive_mode => 0,
     slicer_flavor    => undef,
     ini_type         => undef,
+    profile_name     => undef,
     ironing_type     => undef,
     iterations_left  => undef,
     dirs             => {
@@ -227,6 +228,7 @@ sub remove_percent {
 # Helper subroutine to convert comma-separated strings to array of values
 sub multivalue_to_array {
     my ($input_string) = @_;
+    return () unless defined $input_string;
     my $delimiter = $input_string =~ /,/ ? ',' : ';';
     return split( /$delimiter/, $input_string );
 }
@@ -253,17 +255,24 @@ sub process_config_bundle {
 
     # Find line in the form [profile_type:profile_name], and treat everything
     # between that and the next such line as profile_content
-    while ( $file =~ /\[([\w\s\+\-]+):([^\]]+)\]\n(.*?)\n(?=\[|$)/sg) {
+    while ( $file =~ /\[([\w\s\+\-]+):([^\]]+)\]\n(.*?)\n(?=\[|$)/sg ) {
         my ( $profile_type, $profile_name, $profile_content ) = ( $1, $2, $3 );
         my $physical_printer_profile = ( $profile_type eq "physical_printer" );
-        my $illegal_regex = $illegal_chars{$^O} // qr/[\x00-\x1F]/;
-        $profile_name =~ s/$illegal_regex//g;
+        my $illegal_regex            = $illegal_chars{$^O} // qr/[\x00-\x1F]/;
+        my $temp_filename            = $profile_name;
+        $temp_filename =~ s/$illegal_regex//g;
+        if ( path( $status{dirs}{temp}, "$temp_filename.ini" )->exists ) {
+            $temp_filename = $profile_type . "_" . $temp_filename;
+        }
         my $temp_file =
           ($physical_printer_profile)
           ? file( $status{dirs}{slicer}->subdir('physical_printer'),
-            "$profile_name.ini" )
-          : file( $status{dirs}{temp}, "$profile_name.ini" );
-        $temp_file->spew("$header_line\n\nini_type = $profile_type\n$profile_content");
+            "$temp_filename.ini" )
+          : file( $status{dirs}{temp}, "$temp_filename.ini" );
+        $temp_file->spew( "$header_line\n\n"
+              . "ini_type = $profile_type\n"
+              . "profile_name = $profile_name\n"
+              . "$profile_content" );
         push @file_objects, $temp_file unless $physical_printer_profile;
     }
     return @file_objects;
@@ -308,6 +317,7 @@ sub percent_to_float {
 # Subroutine to convert percentage value to millimeters
 sub percent_to_mm {
     my ( $mm_comparator, $percent_param ) = @_;
+    return undef unless ( defined $mm_comparator && defined $percent_param );
     return $percent_param if !is_percent($percent_param);
     return undef          if is_percent($mm_comparator);
     return "" . ( $mm_comparator * ( remove_percent($percent_param) / 100 ) );
@@ -866,6 +876,8 @@ sub convert_params {
     # Get the value of the current parameter from the INI file
     my $new_value = $source_ini{$parameter} // undef;
 
+    return undef if (!defined $new_value);
+
     # If the SuperSlicer value is 'nil,' skip this parameter and let
     # Orca Slicer use its own default
     return undef if defined $new_value && $new_value eq 'nil';
@@ -898,6 +910,7 @@ sub convert_params {
     }
 
     my $unbackslash_gcode = sub {
+        return "" if (!defined $new_value);
         $new_value =~ s/^"(.*)"$/$1/;
         $new_value = [ unbackslash($new_value) ];
         return $new_value;
@@ -1203,6 +1216,8 @@ sub calculate_print_params {
 
         my $new_value = convert_params( $parameter, undef, %source_ini );
 
+        next if ( !defined $new_value );
+
         # Limit mm/s values to one decimal place so OrcaSlicer doesn't choke
         if ( is_decimal($new_value) ) {
             $new_value = sprintf( "%.1f", $new_value );
@@ -1366,6 +1381,7 @@ sub reset_loop {
     %new_hash = ();
     $status{max_temp} = 0;
     $status{ini_type}                          //= undef;
+    $status{profile_name}                      //= undef;
     $status{to_var}{external_perimeters_first} //= undef;
     $status{to_var}{infill_first}              //= undef;
     $status{to_var}{ironing}                   //= undef;
@@ -1585,6 +1601,13 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     # Loop through each parameter in the INI file
     foreach my $parameter ( keys %source_ini ) {
 
+        # Catch profile name we embedded if this is from a config bundle
+        if ( $parameter eq 'profile_name' ) {
+            $status{profile_name} = $source_ini{$parameter}
+              if exists $source_ini{$parameter};
+            next;
+        }
+
         # Ignore parameters that Orca Slicer doesn't support
         next unless exists $parameter_map{ $status{ini_type} }{$parameter};
 
@@ -1602,11 +1625,13 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
           && $new_value > $status{max_temp};
     }
 
+    my $profile_name = defined $status{profile_name} ? $status{profile_name} : $file;
+
     # Add additional general metadata to the JSON data
     %new_hash = (
         %new_hash,
-        $status{ini_type} . "_settings_id" => $file,
-        name                               => $file,
+        $status{ini_type} . "_settings_id" => $profile_name,
+        name                               => $profile_name,
         from                               => 'User',
         is_custom_defined                  => '1',
         version                            => $ORCA_SLICER_VERSION
@@ -1618,11 +1643,10 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
             %new_hash,
             nozzle_temperature_range_low  => '0',
             nozzle_temperature_range_high => "" . $status{max_temp},
-            slow_down_for_layer_cooling   => (
-                ( $source_ini{'slowdown_below_layer_time'} > 0 )
-                ? '1'
-                : '0'
-            )
+            ( exists $source_ini{'slowdown_below_layer_time'} )
+            ? ( slow_down_for_layer_cooling =>
+                  ( $source_ini{'slowdown_below_layer_time'} > 0 ) ? '1' : '0' )
+            : ()
         );
     }
     elsif ( $status{ini_type} eq 'print' ) {
