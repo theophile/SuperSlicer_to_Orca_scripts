@@ -1260,7 +1260,9 @@ sub handle_physical_printer {
     my $file         = basename( $input_file->basename, ".ini" );
 
     if ( !defined $status{value}{physical_printer} ) {
-        if ( -d $status{dirs}{slicer}->subdir('physical_printer') ) {
+        if ( defined $status{dirs}{slicer}
+            && -d $status{dirs}{slicer}->subdir('physical_printer') )
+        {
             my $item_dir   = $status{dirs}{slicer}->subdir('physical_printer');
             my @items      = $item_dir->children(qr/\.ini$/);
             my @item_names = map { basename( $_, '.ini' ) } @items;
@@ -1278,7 +1280,7 @@ sub handle_physical_printer {
                 $status{value}{physical_printer} =
                   file( $item_dir, $status{value}{physical_printer} . '.ini' );
             }
-            
+
             ask_yes_to_all( 'physical_printer', $file );
 
         }
@@ -1363,6 +1365,10 @@ sub ini_reader {
         my ( $key, $value ) =
           map { s/^\s+|\s+$//gr } split /\s* = \s*/, $line, 2;
         $config{$key} = $value;
+    }
+    if ( defined $status{slicer_flavor} ) {
+        $status{dirs}{slicer} =
+          $status{dirs}{data}->subdir( $status{slicer_flavor} );
     }
     return %config;
 }
