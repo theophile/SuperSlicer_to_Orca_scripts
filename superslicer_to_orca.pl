@@ -359,16 +359,19 @@ my %parameter_map = (
         elefant_foot_compensation       => 'elefant_foot_compensation',
         enable_dynamic_overhang_speeds  => 'enable_overhang_speed',
         extra_perimeters_on_overhangs   => 'extra_perimeters_on_overhangs',
+        extra_perimeters_odd_layers     => 'alternate_extra_wall',
         wipe_tower                      => 'enable_prime_tower',
         wipe_speed                      => 'wipe_speed',
         ensure_vertical_shell_thickness => 'ensure_vertical_shell_thickness',
         gap_fill_min_length             => 'filter_out_gap_fill',
         gcode_comments                  => 'gcode_comments',
         gcode_label_objects             => 'gcode_label_objects',
+        machine_limits_usage            => 'emit_machine_limits_to_gcode',
         infill_anchor_max               => 'infill_anchor_max',
         infill_anchor                   => 'infill_anchor',
         fill_angle                      => 'infill_direction',
         infill_overlap                  => 'infill_wall_overlap',
+        infill_first                    => 'is_infill_first',
         inherits                        => 'inherits',
         extrusion_width                 => 'line_width',
         extrusion_multiplier            => 'print_flow_ratio',
@@ -384,6 +387,14 @@ my %parameter_map = (
         ironing_spacing                 => 'ironing_spacing',
         ironing_speed                   => 'ironing_speed',
         layer_height                    => 'layer_height',
+        init_z_rotate                   => 'preferred_orientation',
+        spiral_vase                     => 'spiral_mode',
+        solid_infill_extruder           => 'solid_infill_filament',
+        support_material_extruder       => 'support_filament',
+        infill_extruder                 => 'sparse_infill_filament',
+        perimeter_extruder              => 'wall_filament',
+        first_layer_extruder            => 'first_layer_filament',
+        support_material_interface_extruder   => 'support_interface_filament',
         avoid_crossing_perimeters_max_detour  => 'max_travel_detour_distance',
         min_bead_width                        => 'min_bead_width',
         min_feature_size                      => 'min_feature_size',
@@ -391,6 +402,7 @@ my %parameter_map = (
         only_one_perimeter_first_layer        => 'only_one_wall_first_layer',
         only_one_perimeter_top                => 'only_one_wall_top',
         ooze_prevention                       => 'ooze_prevention',
+        extra_perimeters_overhangs            => 'extra_perimeters_on_overhangs',
         overhangs_reverse                     => 'overhang_reverse',
         overhangs_reverse_threshold           => 'overhang_reverse_threshold',
         perimeter_acceleration                => 'inner_wall_acceleration',
@@ -427,6 +439,8 @@ my %parameter_map = (
         support_material_enforce_layers       => 'enforce_support_layers',
         support_material_spacing              => 'support_base_pattern_spacing',
         support_material_contact_distance     => 'support_top_z_distance',
+        first_layer_size_compensation_layers  =>
+          'elefant_foot_compensation_layers',
         support_material_bottom_contact_distance => 'support_bottom_z_distance',
         support_material_bottom_interface_layers =>
           'support_interface_bottom_layers',
@@ -466,6 +480,7 @@ my %parameter_map = (
         xy_inner_size_compensation       => 'xy_hole_compensation',
         support_material_layer_height    => 'independent_support_layer_height',
         fill_pattern                     => 'sparse_infill_pattern',
+        solid_fill_pattern               => 'internal_solid_infill_pattern',
         output_filename_format           => 'filename_format',
         support_material_pattern         => 'support_base_pattern',
         support_material_interface_pattern => 'support_interface_pattern',
@@ -477,17 +492,18 @@ my %parameter_map = (
         bottom_fill_pattern                => 'bottom_surface_pattern',
         bridge_flow_ratio                  => 'bridge_flow',
         fill_top_flow_ratio                => 'top_solid_infill_flow_ratio',
-        initial_layer_flow_ratio           => 'bottom_solid_infill_flow_ratio',
+        first_layer_flow_ratio             => 'bottom_solid_infill_flow_ratio',
         infill_every_layers                => 'infill_combination',
         complete_objects                   => 'print_sequence',
         brim_type                          => 'brim_type',
         notes                              => 'notes',
-        support_material_style             => 'support_material_style',
+        support_material_style             => 'support_style',
         ironing                            => 'ironing',
         ironing_type                       => 'ironing_type',
         ironing_angle                      => 'ironing_angle',
         external_perimeters_first          => 'external_perimeters_first',
-        infill_first                       => 'infill_first'
+        infill_first                       => 'infill_first',
+        remaining_times                    => 'disable_m73'
     },
 
     'filament' => {
@@ -1033,12 +1049,23 @@ sub convert_params {
         },
 
         # Convert percents to float, capping at 2 as OrcaSlicer expects
-        'bridge_flow_ratio'   => sub { return percent_to_float($new_value) },
-        'fill_top_flow_ratio' => sub { return percent_to_float($new_value) },
+        'bridge_flow_ratio'      => sub { return percent_to_float($new_value) },
+        'fill_top_flow_ratio'    => sub { return percent_to_float($new_value) },
+        'first_layer_flow_ratio' => sub { return percent_to_float($new_value) },
 
         'wall_transition_length' => sub {
             return mm_to_percent( $status{value}{nozzle_size},
                 $new_value );
+        },
+
+        # Emit machine limits to gcode-text to bool
+        'machine_limits_usage' => sub {
+            return ( $new_value eq 'emit_to_gcode' ) ? '1' : '0';
+        },
+
+        # Disable M73 if remaining times disabled
+        'remaining_times' => sub {
+            return ( $new_value eq '0' ) ? '1' : '0';
         },
 
         # Option "0" means "same as top," so set that manually
@@ -1065,6 +1092,7 @@ sub convert_params {
         'fill_pattern'        => sub { return $infill_types{$new_value} },
         'top_fill_pattern'    => sub { return $infill_types{$new_value} },
         'bottom_fill_pattern' => sub { return $infill_types{$new_value} },
+        'solid_fill_pattern'  => sub { return $infill_types{$new_value} },
 
         'gcode_flavor' => sub { return $gcode_flavors{$new_value} // undef; },
 
