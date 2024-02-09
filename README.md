@@ -62,7 +62,7 @@ This is a Perl script that will convert printer, print, and filament profile set
   - Term::Choose
   - Term::Form::ReadLine
   - Text::SimpleTable
-  - JSON
+  - JSON::XS
 
 ## Installation
 
@@ -77,7 +77,7 @@ This is a Perl script that will convert printer, print, and filament profile set
 2. Install the required Perl modules using CPAN or your system's package manager. For example, if you're using CPAN:
 
     ```
-    cpan Getopt::Long File::Basename File::Glob File::HomeDir Path::Class Path::Tiny String::Escape Term::Choose Term::Form::ReadLine Text::SimpleTable JSON
+    cpan Getopt::Long File::Basename File::Glob File::HomeDir Path::Class Path::Tiny String::Escape Term::Choose Term::Form::ReadLine Text::SimpleTable JSON::XS
     ```
 
 3. Clone this repository or download the script directly from GitHub.

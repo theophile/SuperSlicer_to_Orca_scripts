@@ -13,7 +13,7 @@ use String::Escape qw(unbackslash);
 use Term::Choose;
 use Term::Form::ReadLine;
 use Text::SimpleTable;
-use JSON;
+use JSON::XS;
 
 # Constants
 my $ORCA_SLICER_VERSION = '1.6.0.0';
