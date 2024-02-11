@@ -1731,7 +1731,8 @@ foreach my $index ( 0 .. $#expanded_input_files ) {
     }
 
     # Write the JSON data to the output file
-    $output_file->spew( JSON->new->pretty->canonical->encode( \%new_hash ) );
+    $output_file->spew(
+        JSON::XS->new->utf8->pretty->canonical->encode( \%new_hash ) );
 
     log_file_status(
         $input_file,
