@@ -1260,8 +1260,19 @@ sub calculate_print_params {
     $new_hash{'enable_overhang_speed'} =
       $enable_dynamic_overhang_speeds ? '1' : '0';
     if ($enable_dynamic_overhang_speeds) {
-        my @speeds =
-          split( ',', $source_ini{'dynamic_overhang_speeds'} );
+        my @speeds;
+        if ( $status{slicer_flavor} eq 'SuperSlicer' ) {
+            @speeds =
+              split( ',', $source_ini{'dynamic_overhang_speeds'} );
+        }
+        else {
+            @speeds = (
+                $source_ini{'overhang_speed_0'},
+                $source_ini{'overhang_speed_1'},
+                $source_ini{'overhang_speed_2'},
+                $source_ini{'overhang_speed_3'}
+            );
+        }
         my @overhang_speed_keys = (
             'overhang_1_4_speed', 'overhang_2_4_speed',
             'overhang_3_4_speed', 'overhang_4_4_speed'
