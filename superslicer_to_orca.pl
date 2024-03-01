@@ -1552,7 +1552,14 @@ foreach my $pattern (@input_files) {
     my @iterator =
       ( -d $pattern ) ? dir($pattern)->children : bsd_glob($pattern);
     foreach my $file (@iterator) {
-        next unless -f $file && file($file)->basename =~ qr/\.ini$/;
+        if (!-f $file) {
+            print "Cannot find $file\n";
+            next;
+        }
+        if (!(file($file)->basename =~ qr/\.ini$/)){
+            print "$file is not a .ini file!\n";
+            next;
+        };
         push @expanded_input_files,
           is_config_bundle($file) ? process_config_bundle($file) : file($file);
     }
