@@ -318,6 +318,7 @@ sub percent_to_float {
 sub percent_to_mm {
     my ( $mm_comparator, $percent_param ) = @_;
     return undef unless ( defined $mm_comparator && defined $percent_param );
+    return undef if $mm_comparator eq '' || $percent_param eq '';
     return $percent_param if !is_percent($percent_param);
     return undef          if is_percent($mm_comparator);
     return "" . ( $mm_comparator * ( remove_percent($percent_param) / 100 ) );
@@ -1131,15 +1132,15 @@ sub convert_params {
         # If this is a percent, try to calculate based on external extrusion
         # width. If that's also a percent, use nozzle size.
         'support_material_xy_spacing' => sub {
-            $new_value =
+            my $calculated_value =
               percent_to_mm( $source_ini{'external_perimeter_extrusion_width'},
                 $new_value );
-            if ( !defined ) {
-                $new_value = percent_to_mm( $status{value}{nozzle_size},
-                    $new_value );
+            if ( !defined $calculated_value ) {
+                $calculated_value =
+                  percent_to_mm( $status{value}{nozzle_size}, $new_value );
             }
-            return defined $new_value ? "" . $new_value : undef;
-        },
+            return defined $calculated_value ? "" . $calculated_value : undef;
+          },
 
         # Interpret empty extrusion_width as zero
         'extrusion_width' =>
